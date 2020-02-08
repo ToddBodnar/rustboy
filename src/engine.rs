@@ -278,6 +278,26 @@ impl Registers{
             RegisterNames::PC => self.pc = value,
             RegisterNames::SP => self.sp = value,
 
+            RegisterNames::AF => {
+                self.a = (value >> 8) as u8;
+                self.f = (value & 0xFF) as u8;
+            },
+
+            RegisterNames::BC => {
+                self.b = (value >> 8) as u8;
+                self.c = (value & 0xFF) as u8;
+            },
+
+            RegisterNames::DE => {
+                self.d = (value >> 8) as u8;
+                self.e = (value & 0xFF) as u8;
+            },
+
+            RegisterNames::HL => {
+                self.h = (value >> 8) as u8;
+                self.l = (value & 0xFF) as u8;
+            },
+
             _ => {
                 println!("Setting undefined register")
             } //TODO
@@ -296,10 +316,10 @@ impl Registers{
             RegisterNames::H => return self.h as u16,
             RegisterNames::L => return self.l as u16,
 
-            RegisterNames::AF => return self.a as u16 + ((self.f as u16) << 8),
-            RegisterNames::BC => return self.b as u16 + ((self.c as u16) << 8),
-            RegisterNames::DE => return self.d as u16 + ((self.e as u16) << 8),
-            RegisterNames::HL => return self.h as u16 + ((self.l as u16) << 8),
+            RegisterNames::AF => return self.f as u16 + ((self.a as u16) << 8),
+            RegisterNames::BC => return self.c as u16 + ((self.b as u16) << 8),
+            RegisterNames::DE => return self.e as u16 + ((self.d as u16) << 8),
+            RegisterNames::HL => return self.l as u16 + ((self.h as u16) << 8),
 
             RegisterNames::SP => return self.sp,
             RegisterNames::PC => return self.pc,
