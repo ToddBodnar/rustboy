@@ -38,7 +38,8 @@ fn main() {
 
             h: 0,
             l: 0,
-        }
+        },
+        enable_interrupt: false
     };
 
     eng.run();

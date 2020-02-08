@@ -3,24 +3,48 @@ pub struct Memory {
 }
 
 impl Memory {
-    pub fn set(&mut self, loc: u16, val: u8){
+    pub fn set(&mut self, loc: u16, val: u8) {
         self.ram[loc as usize] = val;
     }
 
-    pub fn get(&self, loc: u16) -> u8{
+    pub fn get(&self, loc: u16) -> u8 {
         return self.ram[loc as usize];
+    }
+
+    pub fn push_stack(&mut self, reg: &mut Registers, val: u16) {
+        let low_byte = (val & 0xFF) as u8;
+        let high_byte = (val / 0x100) as u8;
+
+        let sp = reg.get_register(&RegisterNames::SP);
+
+        self.set(sp, low_byte);
+        self.set(sp - 1, high_byte);
+
+        reg.set_register(&RegisterNames::SP, sp - 2);
+    }
+
+    pub fn pop_stack(&self, reg: &mut Registers) -> u16 {
+        let sp = reg.get_register(&RegisterNames::SP);
+
+        let high_byte = self.get(sp + 1) as u16;
+        let low_byte = self.get(sp + 2) as u16;
+
+        reg.set_register(&RegisterNames::SP, sp + 2);
+
+        return high_byte * 0x100 + low_byte;
     }
 }
 
 pub struct Engine {
     pub memory: Memory,
-    pub registers: Registers
+    pub registers: Registers,
+    pub enable_interrupt: bool
 }
 
 impl Engine {
     pub fn run(&mut self){
 
-        for _ in 1..100 {
+        for _ in 1..1000 {
             let wait_time = self.execute_next_instruction();
         }
     }
@@ -29,9 +53,19 @@ impl Engine {
         return self.memory.get(start);
     }
 
+
+    fn get_d16(&self, start: u16) -> u16 {
+        return ((self.memory.get(start+1) as u16) << 8)
+              + (self.memory.get(start) as u16);
+    }
+
+    fn get_r8(&self, start: u16) -> i8 {
+        return self.memory.get(start) as i8;
+    }
+
     fn get_a16(&self, start: u16) -> u16 {
-        return ((self.memory.get(start) as u16) << 8)
-              + (self.memory.get(start+1) as u16);
+        return ((self.memory.get(start+1) as u16) << 8)
+              + (self.memory.get(start) as u16);
     }
 
     fn execute_next_instruction(&mut self) -> u8 {
@@ -61,13 +95,31 @@ impl Engine {
             }
         };
 
-        println!("{:?} = {:?}, {:?}", first_byte, second_nibble, first_nibble);
+        //println!("{:?} = {:?}, {:?}", first_byte, second_nibble, first_nibble);
         match first_byte {
             0x00 => {
                 // no op
                 self.registers.incr_pc(1);
                 return 4 as u8;
             },
+
+            0x01 | 0x11 | 0x21 | 0x31 => { //2 byte load
+                let resolved_register = match first_byte {
+                    0x01 => RegisterNames::BC,
+                    0x11 => RegisterNames::DE,
+                    0x21 => RegisterNames::HL,
+                    0x31 => RegisterNames::SP,
+                    _ => panic!("how did we get here?")
+                };
+
+                let d16 = self.get_d16(self.registers.get_register(&RegisterNames::PC) + 1);
+
+                self.registers.set_register(&resolved_register, d16);
+
+                self.registers.incr_pc(3);
+                return 12 as u8;
+            },
+
             0x04 => self.inc(RegisterNames::B),
             0x05 => self.dec(RegisterNames::B),
             0x02 | 0x12 | 0x22 | 0x32 | 0x0A | 0x1A | 0x2A | 0x3A => {
@@ -111,6 +163,28 @@ impl Engine {
                 self.registers.incr_pc(2);
                 return 8 as u8;
             },
+
+            // jump relative
+            0x18 | 0x20 | 0x28 | 0x30 | 0x38 => {
+                let decide_to_jump = match first_byte {
+                    0x18 => true,
+                    0x20 => !self.registers.is_zero_flag(),//nz
+                    0x28 => self.registers.is_zero_flag(),//z
+                    0x30 => !self.registers.is_cary_flag(),//nc
+                    0x38 => self.registers.is_cary_flag(),//c
+                    _ => panic!("how did we get here?")
+                };
+
+                if !decide_to_jump {
+                    self.registers.incr_pc(2);
+                    return 8 as u8;
+                } else {
+                    let to_increase = self.get_r8(self.registers.get_register(&RegisterNames::PC) + 1);
+                    self.registers.incr_pc(to_increase as i32);
+                    return 12 as u8;
+                }
+            }
+
             // load block
             0x40..=0x7F => {
                 if first_byte == 0x76 {
@@ -143,28 +217,54 @@ impl Engine {
                     return 4 as u8;
                 }
             },
-            0x80..=0x8F => { //add + addc
-                let initial_first = self.registers.get_register(&RegisterNames::A);
-                let mut initial_second = self.registers.get_register(&resolved_second_register);
-
-                if (first_byte > 0x87) & self.registers.is_cary_flag() {
-                    initial_second += 1;
-                }
-
-                self.registers.set_register(&RegisterNames::A, initial_first + initial_second);
+            0x80..=0x87 => {
+                self.math_to_a(MathNames::ADD, self.registers.get_register(&resolved_second_register));
                 self.registers.incr_pc(1);
-
-                self.registers.set_register(&RegisterNames::F,
-                    Registers::make_flags((initial_first + initial_second) as u8 == 0,
-                                false,
-                                // see https://robdor.com/2016/08/10/gameboy-emulator-half-carry-flag/
-                                (initial_first + initial_second) & 0x10 == 0x10,
-                                initial_first + initial_second > 0xF
-                ));
-
                 return 4 as u8;
-
             },
+
+            0x88..=0x8F => {
+                self.math_to_a(MathNames::ADDC, self.registers.get_register(&resolved_second_register));
+                self.registers.incr_pc(1);
+                return 4 as u8;
+            },
+
+            0x90..=0x97 => {
+                self.math_to_a(MathNames::SUB, self.registers.get_register(&resolved_second_register));
+                self.registers.incr_pc(1);
+                return 4 as u8;
+            },
+
+            0x98..=0x9F => {
+                self.math_to_a(MathNames::SUBC, self.registers.get_register(&resolved_second_register));
+                self.registers.incr_pc(1);
+                return 4 as u8;
+            },
+
+            0xA0..=0xA7 => {
+                self.math_to_a(MathNames::AND, self.registers.get_register(&resolved_second_register));
+                self.registers.incr_pc(1);
+                return 4 as u8;
+            },
+
+            0xA8..=0xAF => {
+                self.math_to_a(MathNames::XOR, self.registers.get_register(&resolved_second_register));
+                self.registers.incr_pc(1);
+                return 4 as u8;
+            },
+
+            0xB0..=0xB7 => {
+                self.math_to_a(MathNames::OR, self.registers.get_register(&resolved_second_register));
+                self.registers.incr_pc(1);
+                return 4 as u8;
+            },
+
+            0xB8..=0xBF => {
+                self.math_to_a(MathNames::CP, self.registers.get_register(&resolved_second_register));
+                self.registers.incr_pc(1);
+                return 4 as u8;
+            },
+
             0xC2 => { // jump nz
                 if self.registers.is_zero_flag() {
                     self.registers.incr_pc(3);
@@ -184,6 +284,87 @@ impl Engine {
                 return 16 as u8;
             },
 
+            // returns
+            0xC0 | 0xC8 | 0xC9 | 0xD0 | 0xD8 => {
+                let decide_to_jump = match first_byte {
+                    0xC9 => true,
+                    0xC0 => !self.registers.is_zero_flag(),//nz
+                    0xC8 => self.registers.is_zero_flag(),//z
+                    0xD0 => !self.registers.is_cary_flag(),//nc
+                    0xD8 => self.registers.is_cary_flag(),//c
+                    _ => panic!("how did we get here?")
+                };
+
+                self.registers.incr_pc(1);
+                if !decide_to_jump {
+                    return 8 as u8;
+                } else {
+                    let new_pc = self.memory.pop_stack(&mut self.registers);
+                    self.registers.set_register(&RegisterNames::PC, new_pc);
+
+                    if first_byte == 0xC9 {
+                        return 16 as u8;
+                    } else {
+                        return 20 as u8;
+                    }
+                }
+            },
+
+            // call
+            0xC4 | 0xCC | 0xCD | 0xD4 | 0xDC => {
+                let decide_to_jump = match first_byte {
+                    0xCD => true,
+                    0xC4 => !self.registers.is_zero_flag(),//nz
+                    0xCC => self.registers.is_zero_flag(),//z
+                    0xD4 => !self.registers.is_cary_flag(),//nc
+                    0xDC => self.registers.is_cary_flag(),//c
+                    _ => panic!("how did we get here?")
+                };
+
+                let a16 = self.get_a16(self.registers.get_register(&RegisterNames::PC) + 1);
+
+                self.registers.incr_pc(3);
+                if !decide_to_jump {
+                    return 12 as u8;
+                } else {
+                    let old_pc = self.registers.get_register(&RegisterNames::PC);
+
+                    self.memory.push_stack(&mut self.registers, old_pc);
+
+                    self.registers.set_register(&RegisterNames::PC, a16);
+
+                    return 24 as u8;
+                }
+            },
+
+            0xC6 | 0xCE | 0xD6 | 0xDE | 0xE6 | 0xEE | 0xF6 | 0xFE => { //d8 math
+                let math_type = match first_byte {
+                    0xC6 => MathNames::ADD,
+                    0xCE => MathNames::ADDC,
+                    0xD6 => MathNames::SUB,
+                    0xDE => MathNames::SUBC,
+                    0xE6 => MathNames::AND,
+                    0xEE => MathNames::XOR,
+                    0xF6 => MathNames::OR,
+                    0xFE => MathNames::CP,
+                    _ => panic!("how did we get here")
+                };
+
+                self.math_to_a(math_type, self.get_d8(self.registers.get_register(&RegisterNames::PC) + 1) as u16);
+                self.registers.incr_pc(2);
+                return 8 as u8;
+            },
+
+            0xE0 => { // load a into a8
+                let target = self.get_d8(self.registers.get_register(&RegisterNames::PC) + 1) as u16 + 0xFF00;
+
+                self.memory.set(target, self.registers.get_register(&RegisterNames::A) as u8);
+
+                self.registers.incr_pc(2);
+
+                return 12 as u8;
+            },
+
             0xEA => { // load a into a16
                 let target = self.get_a16(self.registers.get_register(&RegisterNames::PC) + 1);
 
@@ -191,10 +372,20 @@ impl Engine {
 
                 self.registers.incr_pc(3);
 
-                println!("{:?}", self.memory.get(target));
-
                 return 16 as u8;
-            }
+            },
+
+            //interrupts
+            0xF3 => {
+                self.enable_interrupt = false;
+                self.registers.incr_pc(1);
+                return 4 as u8;
+            },
+            0xFB => {
+                self.enable_interrupt = true;
+                self.registers.incr_pc(1);
+                return 4 as u8;
+            },
 
             _ => {
                 println!("Don't understand instr {:?}", self.memory.get(self.registers.get_register(&RegisterNames::PC)));
@@ -215,6 +406,115 @@ impl Engine {
         self.registers.incr_pc(1);
         return 4;
     }
+
+    fn math_to_a(&mut self, math_type: MathNames, other_value: u16) {
+        let initial_a = self.registers.get_register(&RegisterNames::A);
+        let mut result = 0;
+
+        match math_type {
+            ADD => {
+                result = initial_a + other_value;
+
+                self.registers.set_register(&RegisterNames::F,
+                    Registers::make_flags((initial_a + other_value) as u8 == 0,
+                                false,
+                                // see https://robdor.com/2016/08/10/gameboy-emulator-half-carry-flag/
+                                (initial_a + other_value) & 0x10 == 0x10,
+                                initial_a + other_value > 0xF
+                ));
+            },
+            ADDC => {
+                result = initial_a + other_value;
+                if self.registers.is_cary_flag() {
+                    result += 1;
+                }
+
+                self.registers.set_register(&RegisterNames::F,
+                    Registers::make_flags((initial_a + other_value) as u8 == 0,
+                                false,
+                                // see https://robdor.com/2016/08/10/gameboy-emulator-half-carry-flag/
+                                (initial_a + other_value) & 0x10 == 0x10,
+                                initial_a + other_value > 0xF
+                ));
+            },
+
+            SUB => {
+                result = initial_a - other_value;
+
+                self.registers.set_register(&RegisterNames::F,
+                    Registers::make_flags((initial_a + other_value) as u8 == 0,
+                                false,
+                                // see https://robdor.com/2016/08/10/gameboy-emulator-half-carry-flag/
+                                (initial_a - other_value) & 0x10 == 0x10,
+                                initial_a - other_value > 0xF
+                ));
+            },
+            SUBC => {
+                result = initial_a - other_value;
+                if self.registers.is_cary_flag() {
+                    result += 1;
+                }
+
+                self.registers.set_register(&RegisterNames::F,
+                    Registers::make_flags((initial_a + other_value) as u8 == 0,
+                                false,
+                                // see https://robdor.com/2016/08/10/gameboy-emulator-half-carry-flag/
+                                (initial_a + other_value) & 0x10 == 0x10,
+                                initial_a + other_value > 0xF
+                ));
+            },
+
+            AND => {
+                result = initial_a & other_value;
+
+
+                self.registers.set_register(&RegisterNames::F,
+                    Registers::make_flags(result == 0,
+                                false,
+                                true,
+                                false
+                ));
+            },
+
+            OR => {
+                result = initial_a | other_value;
+
+
+                self.registers.set_register(&RegisterNames::F,
+                    Registers::make_flags(result == 0,
+                                false,
+                                false,
+                                false
+                ));
+            },
+
+            XOR => {
+                result = initial_a ^ other_value;
+
+
+                self.registers.set_register(&RegisterNames::F,
+                    Registers::make_flags(result == 0,
+                                false,
+                                true,
+                                false
+                ));
+            },
+
+            CP => {
+                result = initial_a;
+
+
+                self.registers.set_register(&RegisterNames::F,
+                    Registers::make_flags((initial_a - other_value) as u8 == 0,
+                                false,
+                                (initial_a - other_value) & 0x10 == 0x10,
+                                initial_a - other_value > 0xF
+                ));
+            }
+        };
+
+        self.registers.set_register(&RegisterNames::A, result);
+    }
 }
 
 #[derive(PartialEq, Eq)]
@@ -222,6 +522,13 @@ enum RegisterNames {
     A,B,C,D,E,F,H,L,
     AF,BC,DE,HL,
     PC,SP
+}
+
+#[derive(PartialEq, Eq)]
+enum MathNames {
+    ADD, ADDC,
+    SUB, SUBC,
+    AND, XOR, OR, CP
 }
 
 pub struct Registers {
@@ -244,8 +551,8 @@ impl Registers{
         return 0 as u16; //todo
     }
 
-    fn incr_pc(& mut self, amount: u16){
-        self.pc += amount;
+    fn incr_pc(& mut self, amount: i32){
+        self.pc = (self.pc as i32 + amount) as u16;
     }
 
     fn change_register(&mut self, register: RegisterNames, delta: i32){
