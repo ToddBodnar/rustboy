@@ -44,7 +44,7 @@ pub struct Engine {
 impl Engine {
     pub fn run(&mut self){
 
-        for _ in 1..1000 {
+        for _ in 1..1000000000 {
             let wait_time = self.execute_next_instruction();
         }
     }
@@ -52,7 +52,6 @@ impl Engine {
     fn get_d8(&self, start: u16) -> u8 {
         return self.memory.get(start);
     }
-
 
     fn get_d16(&self, start: u16) -> u16 {
         return ((self.memory.get(start+1) as u16) << 8)
@@ -122,6 +121,24 @@ impl Engine {
 
             0x04 => self.inc(RegisterNames::B),
             0x05 => self.dec(RegisterNames::B),
+            0x0C => self.inc(RegisterNames::C),
+            0x0D => self.dec(RegisterNames::C),
+
+            0x14 => self.inc(RegisterNames::D),
+            0x15 => self.dec(RegisterNames::D),
+            0x1C => self.inc(RegisterNames::E),
+            0x1D => self.dec(RegisterNames::E),
+
+            0x24 => self.inc(RegisterNames::H),
+            0x25 => self.dec(RegisterNames::H),
+            0x2C => self.inc(RegisterNames::L),
+            0x2D => self.dec(RegisterNames::L),
+
+            0x34 => self.inc(RegisterNames::HL),
+            0x35 => self.dec(RegisterNames::HL),
+            0x3C => self.inc(RegisterNames::A),
+            0x3D => self.dec(RegisterNames::A),
+
             0x02 | 0x12 | 0x22 | 0x32 | 0x0A | 0x1A | 0x2A | 0x3A => {
                 let memory_loc = match (first_byte & 0xF0) {
                     0x00 => self.registers.get_register(&RegisterNames::BC),
@@ -310,6 +327,28 @@ impl Engine {
                 }
             },
 
+            0xC1 | 0xC5 | 0xD1 | 0xD5 | 0xE1 | 0xE5 | 0xF1 | 0xF5 => {
+                let reg = match first_byte {
+                    0xC1 | 0xC5 => RegisterNames::BC,
+                    0xD1 | 0xD5 => RegisterNames::DE,
+                    0xE1 | 0xE5 => RegisterNames::HL,
+                    0xF1 | 0xF5 => RegisterNames::AF,
+                    _ => panic!("how did we get here")
+                };
+
+                self.registers.incr_pc(1);
+
+                if first_byte % 0xF0 == 1 {
+                    let new_reg = self.memory.pop_stack(&mut self.registers);
+                    self.registers.set_register(&reg, new_reg);
+                    return 12 as u8;
+                } else {
+                    let register_val = self.registers.get_register(&reg);
+                    self.memory.push_stack(&mut self.registers, register_val);
+                    return 16 as u8;
+                }
+            },
+
             // call
             0xC4 | 0xCC | 0xCD | 0xD4 | 0xDC => {
                 let decide_to_jump = match first_byte {
@@ -353,6 +392,27 @@ impl Engine {
                 self.math_to_a(math_type, self.get_d8(self.registers.get_register(&RegisterNames::PC) + 1) as u16);
                 self.registers.incr_pc(2);
                 return 8 as u8;
+            },
+
+            0xC7 | 0xCF | 0xD7 | 0xDF | 0xE7 | 0xEF | 0xF7 | 0xFF => {
+                let old_pc = self.registers.get_register(&RegisterNames::PC) + 1;
+                self.memory.push_stack(&mut self.registers, old_pc);
+
+                let new_pc = match first_byte {
+                    0xC7 => 0x0000,
+                    0xCF => 0x0008,
+                    0xD7 => 0x0010,
+                    0xDF => 0x0018,
+                    0xE7 => 0x0020,
+                    0xEF => 0x0028,
+                    0xF7 => 0x0030,
+                    0xFF => 0x0038,
+                    _ => panic!("how did we get here")
+                };
+
+                self.registers.set_register(&RegisterNames::SP, new_pc);
+
+                return 16 as u8;
             },
 
             0xE0 => { // load a into a8
