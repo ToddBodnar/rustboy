@@ -1,1 +1,1 @@
-cargo clean & cargo build --verbose & cargo run roms/gb240p.gb
+cargo clean && cargo build --verbose && cargo test && cargo run "roms/blargg-gb/cpu_instrs.gb"

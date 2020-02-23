@@ -16,33 +16,37 @@ fn main() {
 
     rom_file_ptr.read_to_end(&mut rom).expect("Couldn't read file");
 
-    let mut memory = engine::Memory{
-        ram:  rom
-    };
-
-    unsafe {memory.ram.set_len(0xFFFF);}
-
-
-    let mut eng = engine::Engine{
-        memory: memory,
-        registers: engine::Registers{
-            pc: 0x100,
-            sp: 0xFFFE,
-
-            a: 0,
-            b: 0,
-            c: 0,
-            d: 0,
-            e: 0,
-            f: 0,
-
-            h: 0,
-            l: 0,
-        },
-        enable_interrupt: false
-    };
-
+    let mut eng = engine::make_engine(rom);
     eng.run();
 
-    
+    print!("\nLCD Control\n{:#010b}", eng.memory.get(0xFF40));
+
+    print!("\nLCD Stat\n{:#010b}", eng.memory.get(0xFF41));
+    print!("\nLCD Control\n{:#010b}", eng.memory.get(0xFF40));
+    print!("\nLCD Scroll Y\n{}", eng.memory.get(0xFF42));
+    print!("\nLCD Scroll X\n{}", eng.memory.get(0xFF43));
+    print!("\nLCD OAM DMA Xfer\n{:#010b}", eng.memory.get(0xFF46));
+
+    print!("\nCharacters\n");
+    for tile in 0x8000..0x97FF {
+        print!("{}", eng.memory.get(tile));
+    }
+
+    print!("\nBG 1\n");
+    for tile in 0x9800..0x9BFF {
+        print!("{}", eng.memory.get(tile));
+    }
+
+    print!("\nBG 2\n");
+    for tile in 0x9C00..0x9FFF {
+        print!("{}", eng.memory.get(tile));
+    }
+
+    print!("\nOAM (sprites)\n");
+    for tile in 0xFE00..0xFE9F {
+        print!("{}", eng.memory.get(tile));
+    }
+
+    print!("\nRegisters\n");
+    print!("{:?}", eng.registers)
 }
