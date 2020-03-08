@@ -4,6 +4,14 @@ use crate::engine::gpu::GPU;
 use crate::engine::registers::Registers;
 use crate::engine::registers::RegisterNames;
 
+
+extern crate sdl2;
+
+use sdl2::pixels::Color;
+use sdl2::event::Event;
+use sdl2::keyboard::Keycode;
+use std::time::Duration;
+
 #[derive(Debug)]
 pub struct Memory {
     pub ram: Vec<u8>
@@ -50,22 +58,56 @@ pub struct Engine {
 }
 
 impl Engine {
-    pub fn run(&mut self){
-        self.run_limited(100);
+    pub fn run(&mut self, headless: bool){
+        let sdl_context = sdl2::init().unwrap();
+        let video_subsystem = sdl_context.video().unwrap();
+        let width = 800;
+        let height = 600;
+        let window = match headless {
+
+            false => video_subsystem.window("Rust Boy", 800, 600).build().unwrap(),
+            true => video_subsystem.window("Rust Boy", 800, 600).hidden().build().unwrap()
+        };
+
+        let mut canvas = window.into_canvas().build().unwrap();
+        let mut event_pump = sdl_context.event_pump().unwrap();
+
+        let mut total_steps = 0;
+        self.gpu.draw(&mut canvas, width, height);
+
+        'running: loop {
+
+            for event in event_pump.poll_iter() {
+                match event {
+                    Event::Quit {..} | Event::KeyDown { keycode: Some(Keycode::Escape), .. } => {
+                        break 'running
+                    },//todo: rest of these
+                    _ => {}
+                }
+            }
+            if(headless){
+                self.run_limited(100);
+                break 'running
+            }
+
+            total_steps += self.run_limited(1);
+
+            if total_steps > 1_000 {
+                total_steps -= 1_000;
+                self.gpu.draw(&mut canvas, width, height);
+            }
+        }
     }
 
-    fn run_limited(&mut self, itrs: u64){
-        println!("Running");
+    fn run_limited(&mut self, itrs: u64) -> u64{
+        let mut total_steps = 0 as u64;
         for i in 0..itrs {
-            if i % 10000000 == 0 {
-                print!("\nRegisters\n");
-                println!("{:?}", self.registers);
-                println!("{}", self.registers.pc)
-            }
             let wait_time = self.execute_next_instruction();
 
             self.gpu.tick(&mut self.memory, wait_time);
+            total_steps += wait_time as u64;
         }
+        return total_steps;
     }
 
     fn get_d8(&self, start: u16) -> u8 {
@@ -89,11 +131,11 @@ impl Engine {
     fn execute_next_instruction(&mut self) -> u32 {
         let first_byte = self.memory.get(self.registers.pc);
 
-        println!("{}", self.registers);
-        println!("{:x?} -> {:x?}", self.registers.pc, first_byte);
+        //println!("{}", self.registers);
+        //println!("{:x?} -> {:x?}", self.registers.pc, first_byte);
         let first_nibble = first_byte >> 4;
         let second_nibble = first_byte & 0x0F;
-        println!("Second nibble {}", second_nibble);
+        //println!("Second nibble {}", second_nibble);
 
         let resolved_second_register = match second_nibble {
             0x0 => RegisterNames::B,
@@ -193,19 +235,60 @@ impl Engine {
                     self.memory.set(memory_loc, self.registers.get_register(&RegisterNames::A) as u8);
                 } else {
                     let memory_val = self.memory.get(memory_loc);
-                    println!("loading {:x} -> ({:x})", memory_loc, memory_val);
+                    //println!("loading {:x} -> ({:x})", memory_loc, memory_val);
                     self.registers.set_register(&RegisterNames::A, memory_val as u16);
                 }
 
-                 match (first_byte & 0xF0) {
-                     0x20 => self.registers.change_register(RegisterNames::HL, 1),
-                     0x30 => self.registers.change_register(RegisterNames::HL, -1),
+                 match (first_byte) {
+                     0x22 | 0x2A => self.registers.change_register(RegisterNames::HL, 1),
+                     0x32 | 0x3A => self.registers.change_register(RegisterNames::HL, -1),
                      _ => {}
                  };
 
                 self.registers.incr_pc(1);
-                return 1;
+                return 8;
             },
+
+            0x09 | 0x19 | 0x29 | 0x39 => {
+                let other_val = match first_byte {
+                    0x09 => self.registers.get_register(&RegisterNames::BC),
+                    0x19 => self.registers.get_register(&RegisterNames::DE),
+                    0x29 => self.registers.get_register(&RegisterNames::HL),
+                    0x39 => self.registers.get_register(&RegisterNames::SP),
+                    _ => panic!("How did we get here?")
+                };
+
+                Engine::math_to_reg(&mut self.registers, &RegisterNames::HL, MathNames::ADD, other_val);
+                self.registers.incr_pc(1);
+                return 8;
+            },
+
+            0x2F | 0x3F => {
+                let oldZ = self.registers.is_zero_flag();
+
+                let carry =  if first_byte == 0x2F {self.registers.is_cary_flag()}
+                                            else{ !self.registers.is_cary_flag()};
+
+                let oldA = self.registers.get_register(&RegisterNames::A);
+
+                self.registers.set_register(&RegisterNames::A, !oldA);
+                self.registers.set_flags(oldZ, true, true, carry);
+
+                self.registers.incr_pc(1);
+                return 4;
+            },
+
+            0x36 => {
+                let memory_loc = self.registers.get_register(&RegisterNames::HL);
+
+                let d8 = self.get_d8(self.registers.get_register(&RegisterNames::PC) + 1);
+
+                self.memory.set(memory_loc, d8);
+
+                self.registers.incr_pc(2);
+                return 12;
+            }
+
             0x06 | 0x16 | 0x26 | 0x0E | 0x1E | 0x2E | 0x3E => {
                 let target_register = match first_byte {
                     0x06 => RegisterNames::B,
@@ -295,56 +378,95 @@ impl Engine {
                 let other_value = self.registers.get_register(&resolved_second_register);
                 Engine::math_to_a(&mut self.registers, MathNames::ADD, other_value);
                 self.registers.incr_pc(1);
-                return 4;
+
+                if resolved_second_register == RegisterNames::HL {
+                    return 8;
+                } else {
+                    return 4;
+                }
             },
 
             0x88..=0x8F => {
                 let other_value = self.registers.get_register(&resolved_second_register);
                 Engine::math_to_a(&mut self.registers, MathNames::ADDC, other_value);
                 self.registers.incr_pc(1);
-                return 4;
+
+                if resolved_second_register == RegisterNames::HL {
+                    return 8;
+                } else {
+                    return 4;
+                }
             },
 
             0x90..=0x97 => {
                 let other_value = self.registers.get_register(&resolved_second_register);
                 Engine::math_to_a(&mut self.registers, MathNames::SUB, other_value);
                 self.registers.incr_pc(1);
-                return 4;
+
+                if resolved_second_register == RegisterNames::HL {
+                    return 8;
+                } else {
+                    return 4;
+                }
             },
 
             0x98..=0x9F => {
                 let other_value = self.registers.get_register(&resolved_second_register);
                 Engine::math_to_a(&mut self.registers, MathNames::SUBC, other_value);
                 self.registers.incr_pc(1);
-                return 4;
+
+                if resolved_second_register == RegisterNames::HL {
+                    return 8;
+                } else {
+                    return 4;
+                }
             },
 
             0xA0..=0xA7 => {
                 let other_value = self.registers.get_register(&resolved_second_register);
                 Engine::math_to_a(&mut self.registers, MathNames::AND, other_value);
                 self.registers.incr_pc(1);
-                return 4;
+
+                if resolved_second_register == RegisterNames::HL {
+                    return 8;
+                } else {
+                    return 4;
+                }
             },
 
             0xA8..=0xAF => {
                 let other_value = self.registers.get_register(&resolved_second_register);
                 Engine::math_to_a(&mut self.registers, MathNames::XOR, other_value);
                 self.registers.incr_pc(1);
-                return 4;
+
+                if resolved_second_register == RegisterNames::HL {
+                    return 8;
+                } else {
+                    return 4;
+                }
             },
 
             0xB0..=0xB7 => {
                 let other_value = self.registers.get_register(&resolved_second_register);
                 Engine::math_to_a(&mut self.registers, MathNames::OR, other_value);
                 self.registers.incr_pc(1);
-                return 4;
+
+                if resolved_second_register == RegisterNames::HL {
+                    return 8;
+                } else {
+                    return 4;
+                }
             },
 
             0xB8..=0xBF => {
                 let other_value = self.registers.get_register(&resolved_second_register);
                 Engine::math_to_a(&mut self.registers, MathNames::CP, other_value);
                 self.registers.incr_pc(1);
-                return 4;
+                if resolved_second_register == RegisterNames::HL {
+                    return 8;
+                } else {
+                    return 4;
+                }
             },
 
             0xC2 => { // jump nz
@@ -492,6 +614,16 @@ impl Engine {
                 return 12;
             },
 
+            0xE2 => { // load a into a8
+                let target =self.registers.get_register(&RegisterNames::C) as u16 + 0xFF00;
+
+                self.memory.set(target, self.registers.get_register(&RegisterNames::A) as u8);
+
+                self.registers.incr_pc(1);
+
+                return 8;
+            },
+
             0xEA => { // load a into a16
                 let target = self.get_a16(self.registers.get_register(&RegisterNames::PC) + 1);
 
@@ -526,39 +658,63 @@ impl Engine {
                 return 4;
             },
 
+            0xFA => { // load a8 into a
+                let target = self.get_a16(self.registers.get_register(&RegisterNames::PC) + 1);
+
+                let res = self.memory.get(target);
+                self.registers.set_register(&RegisterNames::A, res as u16);
+
+                self.registers.incr_pc(3);
+
+                return 16;
+            },
+
             _ => {
-                println!("Don't understand instr {:?}", self.memory.get(self.registers.get_register(&RegisterNames::PC)));
-                self.registers.incr_pc(1);
-                return 0;
+                panic!("Don't understand instr {:?}", self.memory.get(self.registers.get_register(&RegisterNames::PC)));
             }
         }
     }
 
     fn inc(&mut self, register: RegisterNames) -> u32 {
-        let initial = self.registers.get_register(&register);
-        let old_cary = self.registers.is_cary_flag(); // cary doesn't get changed
+        let currentFlags = self.registers.get_register(&RegisterNames::F);
 
-        self.registers.set_flags(initial == 0xFF, false, (initial + 1) & 0x10 ==0x10, old_cary);
+        let currentCary = self.registers.is_cary_flag();
 
-        self.registers.change_register(register, 1);
+        Engine::math_to_reg(&mut self.registers, &register, MathNames::ADD, 1);
+
         self.registers.incr_pc(1);
+
+        if register == RegisterNames::BC || register == RegisterNames::DE || register == RegisterNames::HL || register == RegisterNames::SP {
+            self.registers.set_register(&RegisterNames::F, currentFlags);
+            return 8;
+        }
 
         return 4;
     }
 
     fn dec(&mut self, register: RegisterNames) -> u32 {
-        let initial = self.registers.get_register(&register) + 0x1000; // add to prevent underflow
-        let old_cary = self.registers.is_cary_flag(); // cary doesn't get changed
+        let currentFlags = self.registers.get_register(&RegisterNames::F);
 
-        self.registers.set_flags(initial == 0x1001, true, (initial - 1) & 0x10 ==0x10, old_cary);
+        let currentCary = self.registers.is_cary_flag();
 
-        self.registers.change_register(register, -1);
+        Engine::math_to_reg(&mut self.registers, &register, MathNames::SUB, 1);
+
         self.registers.incr_pc(1);
+
+        if register == RegisterNames::BC || register == RegisterNames::DE || register == RegisterNames::HL || register == RegisterNames::SP {
+            self.registers.set_register(&RegisterNames::F, currentFlags);
+            return 8;
+        }
+
         return 4;
     }
 
     fn math_to_a(registers: &mut Registers, math_type: MathNames, other_value: u16) {
-        let initial_a = registers.get_register(&RegisterNames::A);
+        Engine::math_to_reg(registers, &RegisterNames::A, math_type, other_value);
+    }
+
+    fn math_to_reg(registers: &mut Registers, register: &RegisterNames, math_type: MathNames, other_value: u16) {
+        let initial_a = registers.get_register(register);
         let mut result;
 
         match math_type {
@@ -568,7 +724,7 @@ impl Engine {
                 registers.set_flags((initial_a + other_value) as u8 == 0,
                                 false,
                                 // see https://robdor.com/2016/08/10/gameboy-emulator-half-carry-flag/
-                                (result) & 0x10 == 0x10,
+                                ((initial_a & 0xF) + (other_value & 0xF)) & 0x10 == 0x10,
                                 (result) > 0xFF
                 );
             },
@@ -674,7 +830,7 @@ impl Engine {
             }
         };
 
-        registers.set_register(&RegisterNames::A, result);
+        registers.set_register(register, result);
     }
 }
 

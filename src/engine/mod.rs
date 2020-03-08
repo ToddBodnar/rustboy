@@ -14,7 +14,7 @@ pub fn make_engine(rom: Vec::<u8>) -> engine::Engine {
 
     let mut gpu = gpu::GPU::make_gpu();
 
-    gpu.tick(&mut memory, 800);
+    //gpu.tick(&mut memory, 800);
 
     return engine::Engine{
         memory: memory,

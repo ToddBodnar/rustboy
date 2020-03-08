@@ -3,6 +3,13 @@ use std::io;
 use std::io::prelude::*;
 use std::fs::File;
 
+extern crate sdl2;
+
+use sdl2::pixels::Color;
+use sdl2::event::Event;
+use sdl2::keyboard::Keycode;
+use std::time::Duration;
+
 mod engine;
 
 fn main() {
@@ -17,7 +24,7 @@ fn main() {
     rom_file_ptr.read_to_end(&mut rom).expect("Couldn't read file");
 
     let mut eng = engine::make_engine(rom);
-    eng.run();
+    eng.run(false);
 
     print!("\nLCD Control\n{:#010b}", eng.memory.get(0xFF40));
 
@@ -25,6 +32,7 @@ fn main() {
     print!("\nLCD Control\n{:#010b}", eng.memory.get(0xFF40));
     print!("\nLCD Scroll Y\n{}", eng.memory.get(0xFF42));
     print!("\nLCD Scroll X\n{}", eng.memory.get(0xFF43));
+    print!("\nLCD Current Y\n{}", eng.memory.get(0xFF44));
     print!("\nLCD OAM DMA Xfer\n{:#010b}", eng.memory.get(0xFF46));
 
     print!("\nCharacters\n");
@@ -34,7 +42,7 @@ fn main() {
 
     print!("\nBG 1\n");
     for tile in 0x9800..0x9BFF {
-        print!("{}", eng.memory.get(tile));
+        print!("{:x?},", eng.memory.get(tile));
     }
 
     print!("\nBG 2\n");
@@ -48,5 +56,11 @@ fn main() {
     }
 
     print!("\nRegisters\n");
-    print!("{:?}", eng.registers)
+    print!("{:?}", eng.registers);
+
+
+    print!("\nImage:\n");
+    for i in 0..144 {
+        //println!("{:?}", eng.gpu.lcd[i]);
+    }
 }

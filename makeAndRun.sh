@@ -1,1 +1,1 @@
-cargo clean && cargo build --verbose && cargo test && cargo run "roms/blargg-gb/cpu_instrs.gb"
+cargo build --verbose && cargo test && cargo run "roms/opus/opus5.gb"
