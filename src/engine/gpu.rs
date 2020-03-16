@@ -38,7 +38,7 @@ impl GPU {
 
         canvas.set_draw_color(Color::RGB(0,0,255));
         canvas.clear();
-        println!("scale {}", scale);
+
         for y in 0..144 {
             for x in 0..160 {
                 let mut col = self.lcd[y][x];
@@ -108,33 +108,64 @@ impl GPU {
     }
 
     fn set_lcdc_y(&mut self, memory: &mut Memory, amt: u8){
-        println!("---Y frame is now {} ({:?})", amt, self.mode);
+        //println!("---Y frame is now {} ({:?})", amt, self.mode);
         memory.set(0xFF44, amt);
     }
 
+    fn get_lcdc_bit(memory: &Memory, loc: u8) -> bool {
+        return memory.get(0xFF40) & (1 << (loc)) > 0;
+    }
+
+    fn get_lcdc_tile_data(memory: &Memory) -> bool{
+        GPU::get_lcdc_bit(memory, 4)
+    }
+
+    fn get_lcdc_tile_map(memory: &Memory) -> bool{
+        GPU::get_lcdc_bit(memory, 3)
+    }
+
     fn draw_line(&mut self, memory: &mut Memory, line: u8){
-        let map_loc = self.get_map_loc(memory);
-        let inner_line = line as i16 + self.get_y_offset(memory);
+        let map_loc = match GPU::get_lcdc_tile_map(memory) {
+            true  => 0x9C00 as usize,
+            false => 0x9800 as usize
+        };
+        let inner_line = line as i32 + self.get_y_offset(memory);
         let x_offset = self.get_x_offset(memory);
-        let tile_loc = 0x8000 as usize;
+        let tile_loc = match GPU::get_lcdc_tile_data(memory) {
+            true  => 0x8000 as i32,
+            false => 0x8800 as i32
+        };
+
         let palet = memory.get(0xFF47);
 
         for x in 0..(160 / 8) {
-            println!("{},{} -> {}",x,line, ((x as i16 * 8 + x_offset) / 8 + (inner_line / 8 as i16 * 32)+ map_loc as i16) as u16);
-            let tile_id = memory.get(((x as i16 * 8 + x_offset) / 8 + (inner_line / 8 as i16 * 32)+ map_loc as i16) as u16) as usize;
-            let tile_low = memory.get((tile_id * 2 * 8 + (inner_line as usize % 8) + tile_loc) as u16);
-            let tile_high = memory.get((tile_id * 2 * 8 + 1 + (inner_line as usize % 8) + tile_loc) as u16);
+            //println!("{},{} -> {}",x,line, ((x as i16 * 8 + x_offset) / 8 + (inner_line / 8 as i16 * 32)+ map_loc as i16) as u16);
+            let mut tile_id = memory.get(((x as i32 * 8 + x_offset) / 8 + (inner_line / 8 as i32 * 32)+ map_loc as i32) as u16) as i32;
 
-            println!("Tile is {} -> {:x?},{:x?}", tile_id, tile_low, tile_high);
+            if !GPU::get_lcdc_tile_data(memory) {
+                if tile_id > 127 {
+                    tile_id = tile_id - 256;
+                }
+            }
+
+            let tile_low = memory.get((tile_id * 2 * 8 + (inner_line as i32 * 2 % 16) + tile_loc) as u16);
+            let tile_high = memory.get((tile_id * 2 * 8 + 1 + (inner_line as i32 * 2 % 16) + tile_loc) as u16);
+
+            if x == 0{
+            //println!("Tile is {} -> {:x?},{:x?}", tile_id, tile_low, tile_high);
+        //    println!("Locations are {}, {}", (tile_id * 2 * 8 + (inner_line as usize % 8) + tile_loc) as u16,
+        //(tile_id * 2 * 8 + 1 + (inner_line as usize % 8) + tile_loc) as u16);
+        }
 
             for xi in 0..8 {
                 let t_low = (tile_low >> (8-xi - 1)) & 0x1;
                 let t_high = (tile_high >> (8-xi - 1)) & 0x1;
-
-                println!("{},{}", t_low, t_high);
+                if x == 0{
+                    //println!("{},{}", t_low, t_high);
+                }
 
                 let t_res = t_low + t_high * 2;
-                println!("{:x?}", palet);
+                //println!("{:x?}", palet);
                 let palet_loc = (palet >> (t_res * 2)) % 0x04;
 
                 let col = match palet_loc {
@@ -147,22 +178,20 @@ impl GPU {
                 self.lcd[line as usize][(x * 8 + xi) as usize] = col;
             }
 
-            println!("Resolved to ");
-            for xi in 0..8{
-                println!("{}", self.lcd[line as usize][(x * 8 + xi) as usize]);
+            if x == 0 {
+                //println!("Resolved to ");
+                for xi in 0..8{
+                //    println!("{}", self.lcd[line as usize][(x * 8 + xi) as usize]);
+                }
             }
         }
     }
 
-    //todo
-    fn get_map_loc(&mut self, memory: &mut Memory) -> u16 {
-        0x9800
+    fn get_y_offset(&mut self, memory: &mut Memory) -> i32 {
+        memory.get(0xFF42) as i32 & 0xFF
     }
-    fn get_y_offset(&mut self, memory: &mut Memory) -> i16 {
-        0
-    }
-    fn get_x_offset(&mut self, memory: &mut Memory) -> i16 {
-        0
+    fn get_x_offset(&mut self, memory: &mut Memory) -> i32 {
+        memory.get(0xFF43) as i32 & 0xFF
     }
 }
 
