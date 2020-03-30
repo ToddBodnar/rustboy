@@ -64,14 +64,15 @@ impl GPU {
                 if self.time >= 204 {
                     self.time -= 204;
                     self.line += 1;
-                    self.set_lcdc_y(memory, self.line);
+                    self.set_lcdc_y(memory, self.line - 1);
+                    self.update_stat(memory);
 
                     if self.line == 143 {
                         self.mode = GpuState::V_BLANK;
                         self.line = 0;
                     } else {
                         self.mode = GpuState::SCAN_OAM;
-                        self.draw_line(memory, self.line - 1);
+                        self.draw_line(memory, self.line);
                     }
                 }
             },
@@ -80,12 +81,13 @@ impl GPU {
                     self.time -= 456;
                     self.line += 1;
 
-                    self.set_lcdc_y(memory, self.line + 143);
+                    self.set_lcdc_y(memory, self.line + 143 - 1);
+                    self.update_stat(memory);
 
                     if self.line >= 10 {
                         self.line = 0;
 
-                        self.set_lcdc_y(memory, 0);
+                        //self.set_lcdc_y(memory, 0);
                         self.mode = GpuState::SCAN_OAM;
                     }
                 }
@@ -94,13 +96,14 @@ impl GPU {
                 if self.time >= 80 {
                     self.time -= 80;
                     self.mode = GpuState::SCAN_VRAM;
+                    self.update_stat(memory);
                 }
             },
             GpuState::SCAN_VRAM => {
                 if self.time >= 172 {
                     self.time -= 172;
                     self.mode = GpuState::H_BLANK;
-                    self.set_lcdc_y(memory, self.line);
+                    //self.set_lcdc_y(memory, self.line);
                     //todo: draw
                 }
             }
@@ -116,12 +119,68 @@ impl GPU {
         return memory.get(0xFF40) & (1 << (loc)) > 0;
     }
 
+    fn get_lcdc_control_operation(memory: &Memory) -> bool{
+        GPU::get_lcdc_bit(memory, 7)
+    }
+
+    fn get_lcdc_window_tile_select(memory: &Memory) -> bool{
+        GPU::get_lcdc_bit(memory, 6)
+    }
+
+    fn get_lcdc_window_on(memory: &Memory) -> bool{
+        GPU::get_lcdc_bit(memory, 5)
+    }
+
     fn get_lcdc_tile_data(memory: &Memory) -> bool{
         GPU::get_lcdc_bit(memory, 4)
     }
 
     fn get_lcdc_tile_map(memory: &Memory) -> bool{
         GPU::get_lcdc_bit(memory, 3)
+    }
+
+    fn get_lcdc_big_sprite(memory: &Memory) -> bool{
+        GPU::get_lcdc_bit(memory, 2)
+    }
+
+    fn get_lcdc_sprite_display(memory: &Memory) -> bool{
+        GPU::get_lcdc_bit(memory, 1)
+    }
+
+    fn get_lcdc_bg_window_on(memory: &Memory) -> bool{
+        GPU::get_lcdc_bit(memory, 0)
+    }
+
+    fn get_lyc_ly_eq_set(memory: &Memory) -> bool {
+        memory.get(0xFF41) & (1 << 6) > 0
+    }
+
+    fn update_stat(&self, memory: &mut Memory) {
+        let mut val = 0;
+
+        if GPU::get_lyc_ly_eq_set(memory) {
+            val += 1 << 6
+        }
+
+        match self.mode {
+            GpuState::SCAN_OAM => val += 1 << 5,
+            GpuState::V_BLANK => val += 1 << 4,
+            GpuState::H_BLANK => val += 1 << 3,
+            GpuState::SCAN_VRAM => {}
+        };
+
+        if memory.get(0xFF44) == self.line {
+            val += 1 << 2
+        }
+
+        match self.mode {
+            GpuState::SCAN_OAM => val += 2,
+            GpuState::V_BLANK => val += 1,
+            GpuState::H_BLANK => val += 0,
+            GpuState::SCAN_VRAM => val += 3
+        };
+
+        memory.set(0xFF41, val);
     }
 
     fn draw_line(&mut self, memory: &mut Memory, line: u8){
@@ -147,6 +206,9 @@ impl GPU {
                     tile_id = tile_id - 256;
                 }
             }
+
+
+            //tile_id = 0;
 
             let tile_low = memory.get((tile_id * 2 * 8 + (inner_line as i32 * 2 % 16) + tile_loc) as u16);
             let tile_high = memory.get((tile_id * 2 * 8 + 1 + (inner_line as i32 * 2 % 16) + tile_loc) as u16);

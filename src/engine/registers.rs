@@ -18,19 +18,19 @@ pub struct Registers {
 
 impl Registers {
     pub fn make_registers() -> Registers {
-        return Registers {
+        return Registers { //todo: understanding of these default values
             pc: 0x100,
             sp: 0xFFFE,
 
             a: 0x11,
-            b: 0,
-            c: 0,
-            d: 0,
+            b: 0x00,
+            c: 0x00,
+            d: 0x00,
             e: 0x08,
             f: 0x80,
 
-            h: 0,
-            l: 0x7C,
+            h: 0x00,
+            l: 0x7c
         };
     }
 
@@ -66,6 +66,14 @@ impl Registers {
 
     pub fn is_zero_flag(&mut self) -> bool {
         return self.f & 128 != 0;
+    }
+
+    pub fn set_zero_flag(&mut self, val: bool) {
+        if self.is_zero_flag() == val {
+            return;
+        } else{
+            self.f ^= 128;
+        }
     }
 
     pub fn is_subtract_flag(&mut self) -> bool {
@@ -157,7 +165,10 @@ impl Registers {
 
 impl fmt::Display for Registers {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        return write!(f, "A: {:x?}\tF: {:x?}\nB: {:x?}\tC: {:x?}\nD: {:x?}\tE: {:x?}\nH: {:x?}\tL: {:x?}\nPC: {:x?} SP: {:x?}", self.a, self.f, self.b, self.c, self.d, self.e, self.h, self.l, self.pc, self.sp);
+        // mgba's main output
+        //return write!(f, "A: {:x?}\tF: {:x?}\nB: {:x?}\tC: {:x?}\nD: {:x?}\tE: {:x?}\nH: {:x?}\tL: {:x?}\nPC: {:x?} SP: {:x?}", self.a, self.f, self.b, self.c, self.d, self.e, self.h, self.l, self.pc, self.sp);
+        // mgba's minified output
+        return write!(f, "A: {:02X?} F: {:02X?} B: {:02X?} C: {:02X?} D: {:02X?} E: {:02X?} H: {:02X?} L: {:02X?} SP: {:04X?} PC: 00:{:04X?}", self.a, self.f, self.b, self.c, self.d, self.e, self.h, self.l, self.sp, self.pc);
     }
 }
 
