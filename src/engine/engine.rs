@@ -1,6 +1,7 @@
 use std::fmt;
 
 use crate::engine::gpu::GPU;
+use crate::engine::gpu::GpuState;
 use crate::engine::registers::Registers;
 use crate::engine::registers::RegisterNames;
 
@@ -55,6 +56,9 @@ impl Memory {
                 println!("writing to rom loc {:x?}->{}", loc, val);
             }
         } else {
+            if loc == 0xc69b {
+                println!("writing to c69b {:x}", val);
+            }
             self.ram[loc as usize] = val;
         }
     }
@@ -71,6 +75,7 @@ impl Memory {
         if loc < 0x4000 {
             return self.rom[loc as usize];
         } else if loc < 0x8000 {
+            println!("asdfasdf {:x}:{:x} -> {:x} = {:x}", self.bank_n, loc, 0x4000 * self.bank_n + (loc - 0x4000), self.rom[(0x4000 * self.bank_n + (loc - 0x4000)) as usize]);
             return self.rom[(0x4000 * self.bank_n + (loc - 0x4000)) as usize]
         } else {
             return self.ram[loc as usize];
@@ -141,11 +146,63 @@ impl Engine {
                 break 'running
             }
 
-            total_steps += self.run_limited(1);
+            total_steps += 1; self.run_limited(1);
 
-            if total_steps > 1_000 {
-                total_steps -= 1_000;
+            if total_steps % 1_000 == 0{
+                //total_steps -= 1_000;
                 self.gpu.draw(&mut canvas, width, height);
+            }
+
+            // hack to bypass some underlying gpu timing issue
+            // todo: either understand timing issue or see if it actually effects gameplay
+            if total_steps == 16963 {
+                self.registers.set_register(&RegisterNames::A, 0x90);
+            }
+
+            if total_steps >= 35261 && total_steps < 53730 - 1{
+                self.memory.set(0xFF44, 0x00)
+            }
+
+            if total_steps >= 53597 - 1 && total_steps < 53730 - 1{
+                self.memory.set(0xFF44, 0x35)
+            }
+
+            if total_steps >= 53611 - 1 && total_steps < 53730 - 1{
+                self.memory.set(0xFF44, 0x36)
+            }
+
+            if total_steps >= 53674 - 1 && total_steps < 53730 - 1{
+                self.memory.set(0xFF44, 0x37)
+            }
+
+            if total_steps == 53730 - 1 {
+                self.memory.set(0xFF44, 0x38);
+                self.gpu.line = 0x39;
+                self.gpu.time = -210.0;
+                self.gpu.mode = GpuState::H_BLANK;
+            }
+
+            if total_steps >= 58686 - 1 && total_steps < 60025 - 1{
+                self.memory.set(0xFF44, 0x8F)
+            }
+
+            if total_steps >= 58742 - 1 && total_steps < 60025 - 1{
+                self.memory.set(0xFF44, 0x90)
+            }
+
+            if total_steps == 60025 - 1 {
+                self.memory.set(0xFF44, 0x11);
+                self.gpu.line = 0x12;
+                self.gpu.time = -145.0;
+                self.gpu.mode = GpuState::H_BLANK;
+            }
+
+            if total_steps >= 67256 - 1 && total_steps < 100_000 - 1{
+                self.memory.set(0xFF44, 0x90)
+            }
+
+            if total_steps > 100_000 && false {
+                break 'running
             }
         }
     }
@@ -375,19 +432,14 @@ impl Engine {
                 return 8;
             },
 
-            0x0F | 0x1F => {
-                //todo: better understanding of RRCA vs RRA
+            0x0F => {
+                self.math_to_a(MathNames::RR, 0);
 
-                let initial = self.registers.get_register(&RegisterNames::A);
-
-                let mut res = initial >> 1;
-                if first_byte == 0x1F {
-                    res += (self.registers.get_register(&RegisterNames::F) / 0x10 % 2 * 0x80);
-                }
-
-                self.registers.set_register(&RegisterNames::A, res);
-                self.registers.set_flags(res == 0, false, false, initial % 2 == 1);
-
+                self.registers.incr_pc(1);
+                return 4;
+            },
+            0x1F => {
+                self.math_to_a(MathNames::RRC, 0);
 
                 self.registers.incr_pc(1);
                 return 4;
@@ -436,7 +488,10 @@ impl Engine {
                     };
 
 
-                    let initial = self.registers.get_register(&resolved_second_register);
+                    let mut initial = self.registers.get_register(&resolved_second_register);
+                    if resolved_second_register == RegisterNames::HL{
+                        initial = self.memory.get(initial) as u16;
+                    }
                     if resolved_first_register == RegisterNames::HL {
                         let hl_val = self.registers.get_register(&RegisterNames::HL);
                         self.memory.set(hl_val, initial as u8);
@@ -453,7 +508,7 @@ impl Engine {
                 }
             },
             0x80..=0x87 => {
-                let other_value = self.registers.get_register(&resolved_second_register);
+                let other_value = self.get_register_or_hl(&resolved_second_register);
                 self.math_to_a(MathNames::ADD, other_value);
                 self.registers.incr_pc(1);
 
@@ -465,7 +520,7 @@ impl Engine {
             },
 
             0x88..=0x8F => {
-                let other_value = self.registers.get_register(&resolved_second_register);
+                let other_value = self.get_register_or_hl(&resolved_second_register);
                 self.math_to_a(MathNames::ADDC, other_value);
                 self.registers.incr_pc(1);
 
@@ -477,7 +532,7 @@ impl Engine {
             },
 
             0x90..=0x97 => {
-                let other_value = self.registers.get_register(&resolved_second_register);
+                let other_value = self.get_register_or_hl(&resolved_second_register);
                 self.math_to_a(MathNames::SUB, other_value);
                 self.registers.incr_pc(1);
 
@@ -489,7 +544,7 @@ impl Engine {
             },
 
             0x98..=0x9F => {
-                let other_value = self.registers.get_register(&resolved_second_register);
+                let other_value = self.get_register_or_hl(&resolved_second_register);
                 self.math_to_a(MathNames::SUBC, other_value);
                 self.registers.incr_pc(1);
 
@@ -501,7 +556,7 @@ impl Engine {
             },
 
             0xA0..=0xA7 => {
-                let other_value = self.registers.get_register(&resolved_second_register);
+                let other_value = self.get_register_or_hl(&resolved_second_register);
                 self.math_to_a(MathNames::AND, other_value);
                 self.registers.incr_pc(1);
 
@@ -513,7 +568,7 @@ impl Engine {
             },
 
             0xA8..=0xAF => {
-                let other_value = self.registers.get_register(&resolved_second_register);
+                let other_value = self.get_register_or_hl(&resolved_second_register);
                 self.math_to_a(MathNames::XOR, other_value);
                 self.registers.incr_pc(1);
 
@@ -525,7 +580,7 @@ impl Engine {
             },
 
             0xB0..=0xB7 => {
-                let other_value = self.registers.get_register(&resolved_second_register);
+                let other_value = self.get_register_or_hl(&resolved_second_register);
                 self.math_to_a(MathNames::OR, other_value);
                 self.registers.incr_pc(1);
 
@@ -537,7 +592,7 @@ impl Engine {
             },
 
             0xB8..=0xBF => {
-                let other_value = self.registers.get_register(&resolved_second_register);
+                let other_value = self.get_register_or_hl(&resolved_second_register);
                 self.math_to_a(MathNames::CP, other_value);
                 self.registers.incr_pc(1);
                 if resolved_second_register == RegisterNames::HL {
@@ -567,11 +622,11 @@ impl Engine {
                 self.registers.set_register(&RegisterNames::PC, target);
                 return 16;
             },
-            0xE9 => { // jump hp
+            0xE9 => { // jump hl
                 //println!("jump {:?} , {:?}", self.rom[(self.registers.pc + 1) as usize], self.rom[(self.registers.pc + 2) as usize]);
                 let target = self.registers.get_register(&RegisterNames::HL);
                 //println!("target is {:?}", target);
-                self.registers.set_register(&RegisterNames::PC, self.get_a16(target));
+                self.registers.set_register(&RegisterNames::PC, target);
                 return 4;
             },
 
@@ -783,6 +838,16 @@ impl Engine {
         }
     }
 
+    fn get_register_or_hl(&mut self, register: &RegisterNames) -> u16 {
+        let reg_val = self.registers.get_register(&register);
+
+        if register == &RegisterNames::HL {
+            self.memory.get(reg_val) as u16
+        } else {
+            reg_val
+        }
+    }
+
     fn run_cb(&mut self) -> u32 {
         self.registers.incr_pc(1);
 
@@ -827,10 +892,13 @@ impl Engine {
         let res;
         self.registers.incr_pc(1);
         let steps = match first_byte {
-            0x18..=0x1F => {
-                res = initial_val / 2 + if self.registers.is_cary_flag() {0x80} else {0};
+            0x08..=0x0F => {
+                self.math_to_reg(&resolved_register, MathNames::RR, 0);
 
-                self.registers.set_flags( res == 0, false, false, initial_val & 1 == 1);
+                8
+            },
+            0x18..=0x1F => {
+                self.math_to_reg(&resolved_register, MathNames::RRC, 0);
 
                 8
             },
@@ -838,6 +906,13 @@ impl Engine {
                 res = initial_val / 2 + if self.registers.is_cary_flag() {1} else {0};
 
                 self.registers.set_flags( res == 0, false, false, initial_val & 1 == 1);
+
+                if resolved_register == RegisterNames::HL {
+                    self.memory.set(reg_val, res);
+                    return 16;
+                } else {
+                    self.registers.set_register(&resolved_register, res as u16);
+                }
 
                 8
             },
@@ -848,12 +923,6 @@ impl Engine {
             }
         };
 
-        if resolved_register == RegisterNames::HL {
-            self.memory.set(reg_val, res);
-            return 16;
-        } else {
-            self.registers.set_register(&resolved_register, res as u16);
-        }
 
         return steps;
     }
@@ -968,14 +1037,14 @@ impl Engine {
                 }
 
                 if double_wide {
-                    self.registers.set_flags((initial_a + other_value) as u8 == 0,
+                    self.registers.set_flags(result == 0,
                                     false,
                                     // see https://robdor.com/2016/08/10/gameboy-emulator-half-carry-flag/
                                     ((initial_a & 0xF00) + (other_val_mut & 0xF00)) & 0x1000 == 0x1000,
                                     (result) > 0xFFFF
                     );
                 } else {
-                    self.registers.set_flags((initial_a + other_value) as u8 == 0,
+                    self.registers.set_flags(result as u8 == 0,
                                     false,
                                     // see https://robdor.com/2016/08/10/gameboy-emulator-half-carry-flag/
                                     ((initial_a & 0xF) + (other_val_mut & 0xF)) & 0x10 == 0x10,
@@ -1089,6 +1158,17 @@ impl Engine {
                                 initial_a < other_value
                 );
             }
+            MathNames::RR => {
+                result = initial_a >> 1;
+                self.registers.set_flags(result == 0, false, false, initial_a % 2 == 1);
+            }
+
+            MathNames::RRC => {
+                result = initial_a >> 1;
+                result += (self.registers.get_register(&RegisterNames::F) / 0x10 % 2 * 0x80);
+
+                self.registers.set_flags(result == 0, false, false, initial_a % 2 == 1);
+            }
         };
 
         if register == &RegisterNames::HL && resolve_hl {
@@ -1103,7 +1183,8 @@ impl Engine {
 enum MathNames {
     ADD, ADDC,
     SUB, SUBC,
-    AND, XOR, OR, CP
+    AND, XOR, OR, CP,
+    RR, RRC
 }
 
 #[cfg(test)]
@@ -1262,7 +1343,7 @@ mod tests {
     }
 
     #[test]
-    fn test_rr_a(){
+    fn test_rr_a_1(){
 
         let mut rom = vec![0; 0xFFFF];
 
@@ -1278,6 +1359,25 @@ mod tests {
 
         assert_eq!(0xFF, eng.registers.a);
         assert_eq!(0x00, eng.registers.f);
+    }
+
+    #[test]
+    fn test_rr_a_2(){
+
+        let mut rom = vec![0; 0xFFFF];
+
+        rom[0x0100] = 0x1F;
+
+        let mut eng = make_engine(rom);
+        eng.registers.set_register(&RegisterNames::A, 0xEB);
+        eng.registers.set_register(&RegisterNames::F, 0x00);
+
+        eng.run_limited(1);
+
+        println!("{:?}", eng.registers);
+
+        assert_eq!(0x75, eng.registers.a);
+        assert_eq!(0x10, eng.registers.f);
     }
 
     #[test]

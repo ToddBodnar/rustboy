@@ -37,7 +37,7 @@ fn main() {
 
     print!("\nCharacters\n");
     for tile in 0x8000..0x97FF {
-        print!("{}", eng.memory.get(tile));
+        print!("{:x?},", eng.memory.get(tile));
     }
 
     print!("\nBG 1\n");

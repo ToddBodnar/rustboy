@@ -6,16 +6,16 @@ use sdl2::rect::Rect;
 
 #[derive(Debug)]
 pub struct GPU {
-    time: u32,
-    line: u8,
-    mode: GpuState,
+    pub time: f32,
+    pub line: u8,
+    pub mode: GpuState,
     pub lcd: Vec<Vec<u8>>
 }
 
 impl GPU {
     pub fn make_gpu() -> GPU {
         return GPU {
-            time: 0,
+            time: 0.0,
             line: 0,
             mode: GpuState::H_BLANK,
             lcd: vec![vec![0; 160]; 144]
@@ -56,13 +56,13 @@ impl GPU {
     }
 
     pub fn tick(&mut self, memory: &mut Memory, ticks: u32){
-        self.time += ticks;
+        self.time += ticks as f32;
         //println!("Gpu time is {} ({:?})", self.time, self.mode);
         //timing based on http://imrannazar.com/GameBoy-Emulation-in-JavaScript:-GPU-Timings, not sure of
         match self.mode {
             GpuState::H_BLANK => {
-                if self.time >= 204 {
-                    self.time -= 204;
+                if self.time >= 204.0 {
+                    self.time -= 204.0;
                     self.line += 1;
                     self.set_lcdc_y(memory, self.line - 1);
                     self.update_stat(memory);
@@ -77,8 +77,8 @@ impl GPU {
                 }
             },
             GpuState::V_BLANK => {
-                if self.time >= 456 {
-                    self.time -= 456;
+                if self.time >= 456.0 + 23.2{
+                    self.time -= 456.0 + 23.2;
                     self.line += 1;
 
                     self.set_lcdc_y(memory, self.line + 143 - 1);
@@ -93,15 +93,15 @@ impl GPU {
                 }
             },
             GpuState::SCAN_OAM => {
-                if self.time >= 80 {
-                    self.time -= 80;
+                if self.time >= 80.0 {
+                    self.time -= 80.0;
                     self.mode = GpuState::SCAN_VRAM;
                     self.update_stat(memory);
                 }
             },
             GpuState::SCAN_VRAM => {
-                if self.time >= 172 {
-                    self.time -= 172;
+                if self.time >= 172.0 {
+                    self.time -= 172.0;
                     self.mode = GpuState::H_BLANK;
                     //self.set_lcdc_y(memory, self.line);
                     //todo: draw
@@ -188,7 +188,7 @@ impl GPU {
             true  => 0x9C00 as usize,
             false => 0x9800 as usize
         };
-        let inner_line = line as i32 + self.get_y_offset(memory);
+        let inner_line = (line as i32 + self.get_y_offset(memory)) % 0x1000;
         let x_offset = self.get_x_offset(memory);
         let tile_loc = match GPU::get_lcdc_tile_data(memory) {
             true  => 0x8000 as i32,
@@ -230,13 +230,18 @@ impl GPU {
                 //println!("{:x?}", palet);
                 let palet_loc = (palet >> (t_res * 2)) % 0x04;
 
-                let col = match palet_loc {
+                let mut col = match palet_loc {
                     3 => 0,
                     2 => 82,
                     1 => 173,
                     0 => 255,
                     _ => panic!("Bad pallet value {}", palet_loc)
                 };
+
+                if tile_id != 0x20 {
+                    //col = 173;
+                }
+
                 self.lcd[line as usize][(x * 8 + xi) as usize] = col;
             }
 
@@ -250,7 +255,7 @@ impl GPU {
     }
 
     fn get_y_offset(&mut self, memory: &mut Memory) -> i32 {
-        memory.get(0xFF42) as i32 & 0xFF
+        memory.get(0xFF42) as i32 & 0xFF * 0
     }
     fn get_x_offset(&mut self, memory: &mut Memory) -> i32 {
         memory.get(0xFF43) as i32 & 0xFF
@@ -258,7 +263,7 @@ impl GPU {
 }
 
 #[derive(Debug)]
-enum GpuState{
+pub enum GpuState{
    SCAN_OAM,
    SCAN_VRAM,
    H_BLANK,

@@ -168,7 +168,14 @@ impl fmt::Display for Registers {
         // mgba's main output
         //return write!(f, "A: {:x?}\tF: {:x?}\nB: {:x?}\tC: {:x?}\nD: {:x?}\tE: {:x?}\nH: {:x?}\tL: {:x?}\nPC: {:x?} SP: {:x?}", self.a, self.f, self.b, self.c, self.d, self.e, self.h, self.l, self.pc, self.sp);
         // mgba's minified output
-        return write!(f, "A: {:02X?} F: {:02X?} B: {:02X?} C: {:02X?} D: {:02X?} E: {:02X?} H: {:02X?} L: {:02X?} SP: {:04X?} PC: 00:{:04X?}", self.a, self.f, self.b, self.c, self.d, self.e, self.h, self.l, self.sp, self.pc);
+
+        let mut pc_bank = 0;
+
+        if self.pc > 0xD000 {
+            pc_bank = 1;
+        }
+
+        return write!(f, "A: {:02X?} F: {:02X?} B: {:02X?} C: {:02X?} D: {:02X?} E: {:02X?} H: {:02X?} L: {:02X?} SP: {:04X?} PC: {:02X?}:{:04X?}", self.a, self.f, self.b, self.c, self.d, self.e, self.h, self.l, self.sp, pc_bank, self.pc);
     }
 }
 
