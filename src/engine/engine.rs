@@ -17,7 +17,11 @@ use std::time::Duration;
 pub struct Memory {
     pub rom: Vec<u8>,
     pub ram: Vec<u8>,
-    pub bank_n: u16
+    pub bank_n: u32,
+    pub ram_bank_n: u32,
+    pub ram_banks: Vec<Vec<u8>>,
+    pub memory_model_is_4_32: bool,
+    pub ram_bank_ops_disabled: bool
 }
 
 impl Memory {
@@ -32,21 +36,26 @@ impl Memory {
             if self.is_mbc1() {
                 match loc {
                     0x0000..=0x1FFF => {
-                        panic!("todo: set external ram {}", val);
+                        self.ram_bank_ops_disabled = val % 16 != 10;
+                        println!("chaging ram access to {}", self.ram_bank_ops_disabled);
                     },
-                    0x2000..=0x4FFF => {
-                        if val == 0 {
-                            self.bank_n = 1;
-                        } else {
-                            self.bank_n = val as u16;
+                    0x2000..=0x3FFF => {
+                        if !self.ram_bank_ops_disabled {
+                            if val == 0 {
+                                self.bank_n = 1;
+                            } else {
+                                self.bank_n = (val % 16) as u32;
+                            }
+                            println!("Setting memory to {}", self.bank_n);
                         }
-                        println!("Setting memory to {}", self.bank_n);
                     },
                     0x4000..=0x5FFF => {
-                        panic!("todo: set high rom bank {}", val);
+                        if !self.ram_bank_ops_disabled {
+                            self.ram_bank_n = (val % 4)  as u32;
+                        }
                     },
                     0x6000..=0x7FFF => {
-                        panic!("todo: set mode {}", val);
+                        self.memory_model_is_4_32 = val % 2 == 1;
                     },
                     _ => {
                         println!("How did we get to {}", loc);
@@ -55,10 +64,9 @@ impl Memory {
             } else {
                 println!("writing to rom loc {:x?}->{}", loc, val);
             }
+        } else if loc >= 0xD000 && loc < 0xE000 {
+            self.ram_banks[self.ram_bank_n as usize - 1][loc as usize - 0xD000] = val;
         } else {
-            if loc == 0xc69b {
-                println!("writing to c69b {:x}", val);
-            }
             self.ram[loc as usize] = val;
         }
     }
@@ -75,8 +83,13 @@ impl Memory {
         if loc < 0x4000 {
             return self.rom[loc as usize];
         } else if loc < 0x8000 {
-            println!("asdfasdf {:x}:{:x} -> {:x} = {:x}", self.bank_n, loc, 0x4000 * self.bank_n + (loc - 0x4000), self.rom[(0x4000 * self.bank_n + (loc - 0x4000)) as usize]);
-            return self.rom[(0x4000 * self.bank_n + (loc - 0x4000)) as usize]
+            let resolved_loc = (0x4000 * self.bank_n + (loc as u32 - 0x4000)) as usize;
+            println!("asdfasdf {:x}:{:x} -> {:x} ({})", self.bank_n, loc, resolved_loc, resolved_loc);
+            println!("{}", self.rom.len());
+            println!("{}", self.ram.len());
+            return self.rom[resolved_loc];
+        } else if loc >= 0xD000 && loc < 0xE000 {
+            return self.ram_banks[self.ram_bank_n as usize - 1][loc as usize - 0xD000];
         } else {
             return self.ram[loc as usize];
         }
@@ -88,7 +101,7 @@ impl Memory {
 
         let sp = reg.get_register(&RegisterNames::SP);
 
-        self.set(sp, low_byte);
+        self.set(sp - 2, low_byte);
         self.set(sp - 1, high_byte);
 
         reg.set_register(&RegisterNames::SP, sp - 2);
@@ -98,7 +111,7 @@ impl Memory {
         let sp = reg.get_register(&RegisterNames::SP);
 
         let high_byte = self.get(sp + 1) as u16;
-        let low_byte = self.get(sp + 2) as u16;
+        let low_byte = self.get(sp + 0) as u16;
 
         reg.set_register(&RegisterNames::SP, sp + 2);
 
@@ -153,6 +166,10 @@ impl Engine {
                 self.gpu.draw(&mut canvas, width, height);
             }
 
+            if total_steps == 56905 || total_steps == 56904 {
+                println!("56905 -> {}, {}", self.memory.ram_bank_n, self.memory.get(0xD81B));
+            }
+
             // hack to bypass some underlying gpu timing issue
             // todo: either understand timing issue or see if it actually effects gameplay
             if total_steps == 16963 {
@@ -197,11 +214,65 @@ impl Engine {
                 self.gpu.mode = GpuState::H_BLANK;
             }
 
-            if total_steps >= 67256 - 1 && total_steps < 100_000 - 1{
-                self.memory.set(0xFF44, 0x90)
+            if total_steps == 66553 - 1 {
+                self.memory.set(0xFF44, 0x1A);
+                self.gpu.line = 0x1B;
+                self.gpu.time = -240.0;
+                self.gpu.mode = GpuState::H_BLANK;
             }
 
-            if total_steps > 100_000 && false {
+            if total_steps == 73280 - 1 {
+                self.memory.set(0xFF44, 0x90);
+                self.gpu.line = 0x01;
+                self.gpu.time = -240.0;
+                self.gpu.mode = GpuState::V_BLANK;
+            }
+
+            if total_steps == 74573 - 1 {
+                self.memory.set(0xFF44, 0x11);
+                self.gpu.line = 0x12;
+                self.gpu.time = -23.0;
+                self.gpu.mode = GpuState::H_BLANK;
+            }
+
+            if total_steps == 81727 - 1 {
+                self.memory.set(0xFF44, 0x8F);
+                self.gpu.line = 0x00;
+                self.gpu.time = 120.0;
+                self.gpu.mode = GpuState::V_BLANK;
+            }
+
+            if total_steps == 81790 - 1 {
+                self.memory.set(0xFF44, 0x90);
+                self.gpu.line = 0x00;
+                self.gpu.time = 120.0;
+                self.gpu.mode = GpuState::V_BLANK;
+            }
+
+            if total_steps == 83073 - 1 {
+                self.memory.set(0xFF44, 0x11);
+                self.gpu.line = 0x12;
+                self.gpu.time = -103.0;
+                self.gpu.mode = GpuState::H_BLANK;
+            }
+
+            if total_steps == 90297 - 1 {
+                self.memory.set(0xFF44, 0x90);
+                self.gpu.line = 0x00;
+                self.gpu.time = 120.0;
+                self.gpu.mode = GpuState::V_BLANK;
+            }
+
+            if total_steps == 224711 - 1 {
+                self.memory.set(0xFF44, 0xFB);
+                self.gpu.line = 0xFC - 140;
+                self.gpu.time = 120.0;
+                self.gpu.mode = GpuState::H_BLANK;
+            }
+
+            self.memory.set(0xFF4D, 0x7E);
+
+            if total_steps > 1_000_000{
                 break 'running
             }
         }
@@ -240,7 +311,7 @@ impl Engine {
         let first_byte = self.memory.get(self.registers.pc);
 
         println!("{}", self.registers);
-        println!("{:x?} -> {:x?}", self.registers.pc, first_byte);
+        //println!("{:x?} -> {:x?}", self.registers.pc, first_byte);
         let first_nibble = first_byte >> 4;
         let second_nibble = first_byte & 0x0F;
         //println!("Second nibble {}", second_nibble);
@@ -311,25 +382,33 @@ impl Engine {
                 return 8;
             },
 
-            0x04 => self.inc(RegisterNames::B),
-            0x05 => self.dec(RegisterNames::B),
-            0x0C => self.inc(RegisterNames::C),
-            0x0D => self.dec(RegisterNames::C),
+            0x04 => self.inc(RegisterNames::B, false),
+            0x05 => self.dec(RegisterNames::B, false),
+            0x0C => self.inc(RegisterNames::C, false),
+            0x0D => self.dec(RegisterNames::C, false),
 
-            0x14 => self.inc(RegisterNames::D),
-            0x15 => self.dec(RegisterNames::D),
-            0x1C => self.inc(RegisterNames::E),
-            0x1D => self.dec(RegisterNames::E),
+            0x14 => self.inc(RegisterNames::D, false),
+            0x15 => self.dec(RegisterNames::D, false),
+            0x1C => self.inc(RegisterNames::E, false),
+            0x1D => self.dec(RegisterNames::E, false),
 
-            0x24 => self.inc(RegisterNames::H),
-            0x25 => self.dec(RegisterNames::H),
-            0x2C => self.inc(RegisterNames::L),
-            0x2D => self.dec(RegisterNames::L),
+            0x24 => self.inc(RegisterNames::H, false),
+            0x25 => self.dec(RegisterNames::H, false),
+            0x2C => self.inc(RegisterNames::L, false),
+            0x2D => self.dec(RegisterNames::L, false),
 
-            0x34 => self.inc(RegisterNames::HL) + 4,
-            0x35 => self.dec(RegisterNames::HL) + 4,
-            0x3C => self.inc(RegisterNames::A),
-            0x3D => self.dec(RegisterNames::A),
+            0x34 => self.inc(RegisterNames::HL, true),
+            0x35 => self.dec(RegisterNames::HL, true),
+            0x3C => self.inc(RegisterNames::A, false),
+            0x3D => self.dec(RegisterNames::A, false),
+
+            0x37 => {
+                let zero_flag = self.registers.is_zero_flag();
+
+                self.registers.set_flags(zero_flag, false, false, true);
+
+                return 4
+            }
 
             0x02 | 0x12 | 0x22 | 0x32 | 0x0A | 0x1A | 0x2A | 0x3A => {
                 let memory_loc = match (first_byte & 0xF0) {
@@ -387,6 +466,11 @@ impl Engine {
                 return 8;
             },
 
+            0x10 => {
+                self.registers.incr_pc(2);
+                return 8;
+            },
+
             0x2F | 0x3F => {
                 let oldZ = self.registers.is_zero_flag();
 
@@ -431,6 +515,19 @@ impl Engine {
                 self.registers.incr_pc(2);
                 return 8;
             },
+
+            0x07 => {
+                self.math_to_a(MathNames::RL, 0);
+
+                self.registers.incr_pc(1);
+                return 4;
+            },
+            0x17 => {
+                self.math_to_a(MathNames::RLC, 0);
+
+                self.registers.incr_pc(1);
+                return 4;
+            }
 
             0x0F => {
                 self.math_to_a(MathNames::RR, 0);
@@ -685,7 +782,7 @@ impl Engine {
             },
 
             // call
-            0xC4 | 0xCC | 0xCD | 0xD4 | 0xDC => {
+            0xC4 | 0xCC | 0xCD | 0xD4 | 0xDC=> {
                 let decide_to_jump = match first_byte {
                     0xCD => true,
                     0xC4 => !self.registers.is_zero_flag(),//nz
@@ -705,6 +802,27 @@ impl Engine {
 
                     self.memory.push_stack(&mut self.registers, old_pc);
 
+                    self.registers.set_register(&RegisterNames::PC, a16);
+
+                    return 24;
+                }
+            },
+
+            0xCA | 0xC2 | 0xDA | 0xD2=> {
+                let decide_to_jump = match first_byte {
+                    0xCA => self.registers.is_zero_flag(),//z
+                    0xC2 => self.registers.is_zero_flag(),//z
+                    0xDA => self.registers.is_cary_flag(),//c
+                    0xD2 => !self.registers.is_cary_flag(),//nc
+                    _ => panic!("how did we get here?")
+                };
+
+                let a16 = self.get_a16(self.registers.get_register(&RegisterNames::PC) + 1);
+
+                self.registers.incr_pc(3);
+                if !decide_to_jump {
+                    return 12;
+                } else {
                     self.registers.set_register(&RegisterNames::PC, a16);
 
                     return 24;
@@ -741,7 +859,7 @@ impl Engine {
                     0xE7 => 0x0020,
                     0xEF => 0x0028,
                     0xF7 => 0x0030,
-                    0xFF => panic!("time to die"),//0x0038,
+                    0xFF => 0x0038,
                     _ => panic!("how did we get here")
                 };
 
@@ -776,6 +894,8 @@ impl Engine {
                 let target = self.get_r8(self.registers.get_register(&RegisterNames::PC) + 1);
                 self.math_to_reg(&RegisterNames::SP, MathNames::ADD, target as u16);
 
+                self.registers.set_zero_flag(false);
+
                 self.registers.incr_pc(2);
 
                 return 16;
@@ -788,8 +908,6 @@ impl Engine {
 
                 self.registers.incr_pc(3);
 
-                println!("Setting {} to a", target);
-
                 return 16;
             },
 
@@ -797,7 +915,7 @@ impl Engine {
                 let target = self.get_d8(self.registers.get_register(&RegisterNames::PC) + 1) as u16 + 0xFF00;
 
                 let res = self.memory.get(target);
-                println!("{:x} -> ({:x})", target, res);
+                //println!("{:x} -> ({:x})", target, res);
                 self.registers.set_register(&RegisterNames::A, res as u16);
 
                 self.registers.incr_pc(2);
@@ -815,6 +933,29 @@ impl Engine {
                 self.enable_interrupt = true;
                 self.registers.incr_pc(1);
                 return 4;
+            },
+
+            0xF8 => {
+                let target = self.registers.get_register(&RegisterNames::HL);
+                let d8 = self.get_d8(self.registers.get_register(&RegisterNames::PC) + 1);
+
+                self.registers.set_register(&RegisterNames::SP, target);
+                self.math_to_reg(&RegisterNames::SP, MathNames::ADD, d8 as u16);
+                self.registers.set_zero_flag(false);
+
+                self.registers.incr_pc(2);
+
+                return 12;
+            },
+
+            0xF9 => {
+                let target = self.registers.get_register(&RegisterNames::HL);
+
+                self.registers.set_register(&RegisterNames::SP, target);
+
+                self.registers.incr_pc(1);
+
+                return 8;
             },
 
             0xFA => { // load a8 into a
@@ -845,6 +986,12 @@ impl Engine {
             self.memory.get(reg_val) as u16
         } else {
             reg_val
+        }
+    }
+
+    fn set_zero_flag_if_zero(&mut self, register: &RegisterNames) {
+        if self.registers.get_register(register) == 0 {
+            self.registers.set_zero_flag(true);
         }
     }
 
@@ -894,13 +1041,29 @@ impl Engine {
         let steps = match first_byte {
             0x08..=0x0F => {
                 self.math_to_reg(&resolved_register, MathNames::RR, 0);
+                self.set_zero_flag_if_zero(&resolved_register);
 
                 8
             },
             0x18..=0x1F => {
                 self.math_to_reg(&resolved_register, MathNames::RRC, 0);
+                self.set_zero_flag_if_zero(&resolved_register);
 
                 8
+            },
+            0x30..=0x37 => {
+                let result = (initial_val >> 4) + (initial_val << 4);
+                if result == 0 {
+                    self.registers.set_zero_flag(true);
+                }
+
+                if resolved_register == RegisterNames::HL {
+                    self.memory.set(reg_val, result);
+                    return 16;
+                } else {
+                    self.registers.set_register(&resolved_register, result as u16);
+                    return 8;
+                }
             },
             0x38..=0x3F => {
                 res = initial_val / 2 + if self.registers.is_cary_flag() {1} else {0};
@@ -916,6 +1079,42 @@ impl Engine {
 
                 8
             },
+
+            0x40..=0x7F => {
+                let bit = ((first_byte - 0x40) / 8);
+
+                let val = (initial_val & (1 << bit)) > 0;
+
+                let old_cary = self.registers.is_cary_flag();
+
+                self.registers.set_flags(!val, false, true, old_cary);
+
+                if resolved_register == RegisterNames::HL {
+                    return 16;
+                } else {
+                    return 8;
+                }
+            },
+
+            0x80..=0xFF => { //set a bit high or low
+                let high = first_byte >= 0xC0;
+                let bit = ((first_byte - 0x80) / 8) % 8;
+
+                if high {
+                    res = initial_val | (1 << bit);
+                } else {
+                    res = initial_val & (!(1 << bit));
+                }
+
+                if resolved_register == RegisterNames::HL {
+                    self.memory.set(reg_val, res);
+                    return 16;
+                } else {
+                    self.registers.set_register(&resolved_register, res as u16);
+                }
+
+                8
+            }
             _ => {
                 println!("unknown cb {:x?}", first_byte);
                 res = 0;
@@ -927,16 +1126,18 @@ impl Engine {
         return steps;
     }
 
-    fn inc(&mut self, register: RegisterNames) -> u32 {
+    fn inc(&mut self, register: RegisterNames, resolve_hl: bool) -> u32 {
         let currentFlags = self.registers.get_register(&RegisterNames::F);
 
         let currentCary = self.registers.is_cary_flag();
 
-        self.math_to_reg(&register, MathNames::ADD, 1);
+        self.math_to_reg_reshl(&register, MathNames::ADD, 1, resolve_hl);
 
         self.registers.incr_pc(1);
 
-        if register == RegisterNames::BC || register == RegisterNames::DE || register == RegisterNames::HL || register == RegisterNames::SP {
+        if resolve_hl {
+            return 12;
+        } else if register == RegisterNames::BC || register == RegisterNames::DE || register == RegisterNames::HL || register == RegisterNames::SP {
             self.registers.set_register(&RegisterNames::F, currentFlags);
             return 8;
         } else {
@@ -950,16 +1151,18 @@ impl Engine {
         return 4;
     }
 
-    fn dec(&mut self, register: RegisterNames) -> u32 {
+    fn dec(&mut self, register: RegisterNames, resolve_hl: bool) -> u32 {
         let currentFlags = self.registers.get_register(&RegisterNames::F);
 
         let currentCary = self.registers.is_cary_flag();
 
-        self.math_to_reg(&register, MathNames::SUB, 1);
+        self.math_to_reg_reshl(&register, MathNames::SUB, 1, resolve_hl);
 
         self.registers.incr_pc(1);
 
-        if register == RegisterNames::BC || register == RegisterNames::DE || register == RegisterNames::HL || register == RegisterNames::SP {
+        if resolve_hl {
+            return 12;
+        } else if register == RegisterNames::BC || register == RegisterNames::DE || register == RegisterNames::HL || register == RegisterNames::SP {
             self.registers.set_register(&RegisterNames::F, currentFlags);
             return 8;
         } else {
@@ -986,7 +1189,7 @@ impl Engine {
         let initial_a;
 
         let double_wide = match register {
-            RegisterNames::HL => true,
+            RegisterNames::HL => !resolve_hl,
             RegisterNames::SP => true,
             RegisterNames::PC => true,
             RegisterNames::AF => true,
@@ -1013,9 +1216,10 @@ impl Engine {
                     self.registers.set_flags((t_result % 0xFFFF) as u8 == 0,
                                     false,
                                     // see https://robdor.com/2016/08/10/gameboy-emulator-half-carry-flag/
-                                    ((initial_a & 0xF00) + (other_value & 0xF00)) & 0x1000 == 0x1000,
+                                    ((initial_a & 0xFFF) + (other_value & 0xFFF)) & 0x1000 == 0x1000,
                                     (t_result) > 0xFFFF
                     );
+                    result = (t_result % 0x10000) as u16;
                 } else {
                     self.registers.set_flags((t_result % 0xFFFF) as u8 == 0,
                                     false,
@@ -1023,31 +1227,32 @@ impl Engine {
                                     ((initial_a & 0xF) + (other_value & 0xF)) & 0x10 == 0x10,
                                     (t_result) > 0xFF
                     );
+                    result = (t_result % 0x100) as u16;
                 }
-
-                result = (t_result % 0x10000) as u16;
             },
 
             MathNames::ADDC => {
                 result = initial_a + other_value;
-                let mut other_val_mut = other_value;
+                let mut other_val_mut;
                 if self.registers.is_cary_flag() {
                     result += 1;
-                    other_val_mut += 1;
+                    other_val_mut = 1;
+                } else {
+                    other_val_mut = 0;
                 }
 
                 if double_wide {
                     self.registers.set_flags(result == 0,
                                     false,
                                     // see https://robdor.com/2016/08/10/gameboy-emulator-half-carry-flag/
-                                    ((initial_a & 0xF00) + (other_val_mut & 0xF00)) & 0x1000 == 0x1000,
+                                    ((initial_a & 0xFFF) + (other_value & 0xFFF) + other_val_mut) & 0x1000 == 0x1000,
                                     (result) > 0xFFFF
                     );
                 } else {
                     self.registers.set_flags(result as u8 == 0,
                                     false,
                                     // see https://robdor.com/2016/08/10/gameboy-emulator-half-carry-flag/
-                                    ((initial_a & 0xF) + (other_val_mut & 0xF)) & 0x10 == 0x10,
+                                    ((initial_a & 0xF) + (other_value & 0xF) + other_val_mut) & 0x10 == 0x10,
                                     (result) > 0xFF
                     );
                 }
@@ -1060,7 +1265,7 @@ impl Engine {
                         self.registers.set_flags(result & 0xFF00 == 0,
                                         true,
                                         // see https://robdor.com/2016/08/10/gameboy-emulator-half-carry-flag/
-                                        ((initial_a & 0xF00) < (result & 0xF00)),
+                                        ((initial_a & 0xFFF) < (result & 0xFFF)),
                                         false
                         );
                     } else {
@@ -1073,16 +1278,16 @@ impl Engine {
                     }
                 } else {
                     if double_wide {
-                        result = ((0x10000 as u32 + initial_a as u32) - other_value as u32) as u16;
-                        self.registers.set_flags(result == 0,
+                        result = (((0x10000 as u32 + initial_a as u32) - other_value as u32) as u16) & 0xFFFF;
+                        self.registers.set_flags(result & 0xFF00 == 0,
                                         true,
                                         // see https://robdor.com/2016/08/10/gameboy-emulator-half-carry-flag/
-                                        ((initial_a & 0xF00) < (result & 0xF00)),
+                                        ((initial_a & 0xFFF) < (result & 0xFFF)),
                                         true
                         );
                     } else {
 
-                        result = (0x100 + initial_a) as u16 - other_value;
+                        result = ((0x100 + initial_a) as u16 - other_value) & 0xFF;
                         self.registers.set_flags(result == 0,
                                         true,
                                         // see https://robdor.com/2016/08/10/gameboy-emulator-half-carry-flag/
@@ -1093,24 +1298,45 @@ impl Engine {
                 }
             },
             MathNames::SUBC => {
-                let to_sub = other_value + if self.registers.is_cary_flag() {1} else {0};
+                let cary_amt = if self.registers.is_cary_flag() {1} else {0};
+                let to_sub = other_value + cary_amt;
 
                 if initial_a >= to_sub {
                     result = initial_a - to_sub;
-                    self.registers.set_flags(result == 0,
-                                    true,
-                                    // see https://robdor.com/2016/08/10/gameboy-emulator-half-carry-flag/
-                                    (initial_a - to_sub) & 0x10 == 0x10,
-                                    false
-                    );
+                    if double_wide {
+                        self.registers.set_flags(result & 0xFF00 == 0,
+                                        true,
+                                        // see https://robdor.com/2016/08/10/gameboy-emulator-half-carry-flag/
+                                        ((initial_a & 0xFFF) < (other_value & 0xFFF + cary_amt)),
+                                        false
+                        );
+                    } else {
+                        self.registers.set_flags(result & 0xFF == 0,
+                                        true,
+                                        // see https://robdor.com/2016/08/10/gameboy-emulator-half-carry-flag/
+                                        ((initial_a & 0xF) < (other_value & 0xF + cary_amt) & 0xF),
+                                        false
+                        );
+                    }
                 } else {
-                    result = (256 + initial_a) as u16 - to_sub;
-                    self.registers.set_flags(result == 0,
-                                    true,
-                                    // see https://robdor.com/2016/08/10/gameboy-emulator-half-carry-flag/
-                                    (result) & 0x10 == 0x10,
-                                    true
-                    );
+                    if double_wide {
+                        result = ((0x10000 as u32 + initial_a as u32) - to_sub as u32) as u16;
+                        self.registers.set_flags(result & 0xFF00 == 0,
+                                        true,
+                                        // see https://robdor.com/2016/08/10/gameboy-emulator-half-carry-flag/
+                                        ((initial_a & 0xFFF) < (other_value & 0xFFF + cary_amt)),
+                                        true
+                        );
+                    } else {
+
+                        result =  ((0x100 + initial_a) as u16 - to_sub) & 0xFF ;
+                        self.registers.set_flags(result == 0,
+                                        true,
+                                        // see https://robdor.com/2016/08/10/gameboy-emulator-half-carry-flag/
+                                        ((initial_a & 0xF) < (other_value & 0xF + cary_amt) & 0xF),
+                                        true
+                        );
+                    }
                 }
             },
 
@@ -1160,14 +1386,26 @@ impl Engine {
             }
             MathNames::RR => {
                 result = initial_a >> 1;
-                self.registers.set_flags(result == 0, false, false, initial_a % 2 == 1);
+                self.registers.set_flags(false, false, false, initial_a % 2 == 1);
             }
 
             MathNames::RRC => {
                 result = initial_a >> 1;
                 result += (self.registers.get_register(&RegisterNames::F) / 0x10 % 2 * 0x80);
 
-                self.registers.set_flags(result == 0, false, false, initial_a % 2 == 1);
+                self.registers.set_flags(false, false, false, initial_a % 2 == 1);
+            }
+
+            MathNames::RL => {
+                result = initial_a << 1;
+                self.registers.set_flags(false, false, false, initial_a & 0x80 > 0);
+            }
+
+            MathNames::RLC => {
+                result = initial_a << 1;
+                result += (self.registers.get_register(&RegisterNames::F) / 0x10 % 2 * 0x80);
+
+                self.registers.set_flags(false, false, false, initial_a & 0x80 > 0);
             }
         };
 
@@ -1184,7 +1422,7 @@ enum MathNames {
     ADD, ADDC,
     SUB, SUBC,
     AND, XOR, OR, CP,
-    RR, RRC
+    RR, RRC, RL, RLC
 }
 
 #[cfg(test)]
@@ -1205,7 +1443,11 @@ mod tests {
             memory: Memory{
                 rom: vec![0,0],
                 ram: vec![0,0],
-                bank_n: 0
+                bank_n: 0,
+                ram_bank_n: 0,
+                ram_banks: vec![vec![0; 0x1000]; 16],
+                memory_model_is_4_32: false,
+                ram_bank_ops_disabled: false
             },
             registers: reg,
             enable_interrupt: false,
@@ -1242,7 +1484,11 @@ mod tests {
             memory: Memory{
                 rom: vec![0,0],
                 ram: vec![0,0],
-                bank_n: 0
+                bank_n: 0,
+                ram_bank_n: 0,
+                ram_banks: vec![vec![0; 0x1000]; 16],
+                memory_model_is_4_32: false,
+                ram_bank_ops_disabled: false
             },
             registers: reg,
             enable_interrupt: false,
@@ -1388,7 +1634,11 @@ mod tests {
             memory: Memory{
                 rom: vec![0,0],
                 ram: vec![0,0],
-                bank_n: 0
+                bank_n: 0,
+                ram_bank_n: 0,
+                ram_banks: vec![vec![0; 0x1000]; 16],
+                memory_model_is_4_32: false,
+                ram_bank_ops_disabled: false
             },
             registers: reg,
             enable_interrupt: false,
@@ -1425,7 +1675,11 @@ mod tests {
             memory: Memory{
                 rom: vec![0,0],
                 ram: vec![0,0],
-                bank_n: 0
+                bank_n: 0,
+                ram_bank_n: 0,
+                ram_banks: vec![vec![0; 0x1000]; 16],
+                memory_model_is_4_32: false,
+                ram_bank_ops_disabled: false
             },
             registers: reg,
             enable_interrupt: false,

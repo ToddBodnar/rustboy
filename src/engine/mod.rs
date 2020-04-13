@@ -6,7 +6,11 @@ pub fn make_engine(rom: Vec::<u8>) -> engine::Engine {
     let mut memory = engine::Memory{
         ram:  vec![0; 0xFFFF + 1],
         rom: rom,
-        bank_n: 1
+        bank_n: 1,
+        ram_bank_n: 1,
+        ram_banks: vec![vec![0; 0x1000]; 16],
+        memory_model_is_4_32: false,
+        ram_bank_ops_disabled: false
     };
 
     //unsafe {memory.ram.set_len(0xFFFF+1);}
