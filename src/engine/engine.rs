@@ -199,80 +199,45 @@ impl Engine {
                 self.gpu.mode = GpuState::H_BLANK;
             }
 
-            if total_steps >= 58686 - 1 && total_steps < 60025 - 1{
-                self.memory.set(0xFF44, 0x8F)
-            }
-
-            if total_steps >= 58742 - 1 && total_steps < 60025 - 1{
-                self.memory.set(0xFF44, 0x90)
-            }
-
-            if total_steps == 60025 - 1 {
-                self.memory.set(0xFF44, 0x11);
-                self.gpu.line = 0x12;
-                self.gpu.time = -145.0;
+            if total_steps == 56726 - 1 {
+                self.memory.set(0xFF44, 0x7A);
+                self.gpu.line = 0x7B;
+                self.gpu.time = -65.0;
                 self.gpu.mode = GpuState::H_BLANK;
             }
 
-            if total_steps == 66553 - 1 {
-                self.memory.set(0xFF44, 0x1A);
-                self.gpu.line = 0x1B;
-                self.gpu.time = -240.0;
-                self.gpu.mode = GpuState::H_BLANK;
-            }
-
-            if total_steps == 73280 - 1 {
-                self.memory.set(0xFF44, 0x90);
-                self.gpu.line = 0x01;
-                self.gpu.time = -240.0;
-                self.gpu.mode = GpuState::V_BLANK;
-            }
-
-            if total_steps == 74573 - 1 {
-                self.memory.set(0xFF44, 0x11);
-                self.gpu.line = 0x12;
-                self.gpu.time = -23.0;
-                self.gpu.mode = GpuState::H_BLANK;
-            }
-
-            if total_steps == 81727 - 1 {
+            if total_steps == 57902 - 1 {
                 self.memory.set(0xFF44, 0x8F);
-                self.gpu.line = 0x00;
-                self.gpu.time = 120.0;
-                self.gpu.mode = GpuState::V_BLANK;
-            }
 
-            if total_steps == 81790 - 1 {
+            }
+            if total_steps == 57958 - 1 {
                 self.memory.set(0xFF44, 0x90);
-                self.gpu.line = 0x00;
-                self.gpu.time = 120.0;
-                self.gpu.mode = GpuState::V_BLANK;
             }
 
-            if total_steps == 83073 - 1 {
+            if total_steps == 59262 - 1 {
                 self.memory.set(0xFF44, 0x11);
                 self.gpu.line = 0x12;
-                self.gpu.time = -103.0;
+                self.gpu.time = 35.0;
                 self.gpu.mode = GpuState::H_BLANK;
             }
 
-            if total_steps == 90297 - 1 {
-                self.memory.set(0xFF44, 0x90);
-                self.gpu.line = 0x00;
-                self.gpu.time = 120.0;
+            if total_steps == 66409 - 1 {
+                self.memory.set(0xFF44, 0x8F);
+                self.gpu.line = 0x90 - 144;
+                self.gpu.time = 145.0;
                 self.gpu.mode = GpuState::V_BLANK;
             }
 
-            if total_steps == 224711 - 1 {
-                self.memory.set(0xFF44, 0xFB);
-                self.gpu.line = 0xFC - 140;
-                self.gpu.time = 120.0;
-                self.gpu.mode = GpuState::H_BLANK;
+            if total_steps == 66472 - 1 {
+                self.memory.set(0xFF44, 0x90);
+                self.gpu.line = 0x90 - 144;
+                self.gpu.time = 145.0;
+                self.gpu.mode = GpuState::V_BLANK;
             }
 
             self.memory.set(0xFF4D, 0x7E);
 
-            if total_steps > 1_000_000{
+            if total_steps > 1_000_000 && false {
                 break 'running
             }
         }
@@ -936,12 +901,18 @@ impl Engine {
             },
 
             0xF8 => {
-                let target = self.registers.get_register(&RegisterNames::HL);
-                let d8 = self.get_d8(self.registers.get_register(&RegisterNames::PC) + 1);
+                let target = self.registers.get_register(&RegisterNames::SP) as i32;
+                let d8 = self.get_r8(self.registers.get_register(&RegisterNames::PC) + 1) as i32;
 
-                self.registers.set_register(&RegisterNames::SP, target);
-                self.math_to_reg(&RegisterNames::SP, MathNames::ADD, d8 as u16);
-                self.registers.set_zero_flag(false);
+                self.registers.set_register(&RegisterNames::HL, ((target + d8) & 0xFFFF) as u16);
+                println!("asdfsdfsdf {} {}", target, d8);
+
+                self.registers.set_flags(false,
+                                false,
+                                // see https://robdor.com/2016/08/10/gameboy-emulator-half-carry-flag/
+                                ((target & 0x00F) + (d8 & 0x00F)) & 0x0010 == 0x0010,
+                                (target & 0x0FF) + (d8 & 0x0FF) > 0x00FF
+                );
 
                 self.registers.incr_pc(2);
 
@@ -1213,12 +1184,21 @@ impl Engine {
                 //println!("A: {:x?} + {:x?} = {:x?}", initial_a, other_value, t_result);
 
                 if double_wide {
-                    self.registers.set_flags((t_result % 0xFFFF) as u8 == 0,
-                                    false,
-                                    // see https://robdor.com/2016/08/10/gameboy-emulator-half-carry-flag/
-                                    ((initial_a & 0xFFF) + (other_value & 0xFFF)) & 0x1000 == 0x1000,
-                                    (t_result) > 0xFFFF
-                    );
+                    if register == &RegisterNames::SP {
+                        self.registers.set_flags((t_result % 0xFFFF) as u8 == 0,
+                                        false,
+                                        // see https://robdor.com/2016/08/10/gameboy-emulator-half-carry-flag/
+                                        ((initial_a & 0x00F) + (other_value & 0x00F)) & 0x0010 == 0x0010,
+                                        (initial_a & 0x0FF) + (other_value & 0x0FF) > 0x00FF
+                        );
+                    } else {
+                        self.registers.set_flags((t_result % 0xFFFF) as u8 == 0,
+                                        false,
+                                        // see https://robdor.com/2016/08/10/gameboy-emulator-half-carry-flag/
+                                        ((initial_a & 0xFFF) + (other_value & 0xFFF)) & 0x1000 == 0x1000,
+                                        (t_result) > 0xFFFF
+                        );
+                    }
                     result = (t_result % 0x10000) as u16;
                 } else {
                     self.registers.set_flags((t_result % 0xFFFF) as u8 == 0,

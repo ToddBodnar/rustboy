@@ -127,11 +127,7 @@ impl Registers {
             RegisterNames::HL => {
                 self.h = (value >> 8) as u8;
                 self.l = (value & 0xFF) as u8;
-            },
-
-            _ => {
-                println!("Setting undefined register")
-            } //TODO
+            }
         }
     }
 
@@ -153,12 +149,7 @@ impl Registers {
             RegisterNames::HL => return self.l as u16 + ((self.h as u16) << 8),
 
             RegisterNames::SP => return self.sp,
-            RegisterNames::PC => return self.pc,
-
-            _ => {
-                println!("TODO: IMPLEMENT REMAINING REGISTERS");
-                return 0;
-            }
+            RegisterNames::PC => return self.pc
         }
     }
 }
