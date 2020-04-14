@@ -367,11 +367,27 @@ impl Engine {
             0x3C => self.inc(RegisterNames::A, false),
             0x3D => self.dec(RegisterNames::A, false),
 
+            //daa
+            0x27 => {
+                let old_sub = self.registers.is_subtract_flag();
+
+                let (a, c) = Engine::daa(self.registers.get_register(&RegisterNames::A),
+                    self.registers.is_cary_flag(),
+                    self.registers.is_half_cary_flag(),
+                    !old_sub);
+
+                self.registers.set_register(&RegisterNames::A, a);
+                self.registers.set_flags(a & 0xFF == 0, old_sub, false, c);
+                self.registers.incr_pc(1);
+                return 4;
+            },
+
             0x37 => {
                 let zero_flag = self.registers.is_zero_flag();
 
                 self.registers.set_flags(zero_flag, false, false, true);
 
+                self.registers.incr_pc(1);
                 return 4
             }
 
@@ -1394,6 +1410,35 @@ impl Engine {
         } else {
             self.registers.set_register(register, result);
         }
+    }
+
+    fn daa(a: u16, initial_carry: bool, initial_half_carry: bool, add_flag: bool) -> (u16, bool) {
+        // actually, see https://forums.nesdev.com/viewtopic.php?t=15944
+        // http://www.z80.info/z80syntx.htm#DAA doesn't cover everything!
+
+        let mut new_a = a as u32;
+        let mut new_c = false;
+        if add_flag {
+            if initial_carry || a > 0x99 {
+                new_a += 0x60;
+                new_c = true;
+            }
+
+            if initial_half_carry || (a & 0xF) > 0x9 {
+                new_a += 0x6;
+            }
+        } else {
+            new_a += 0x100;
+            if initial_carry {
+                new_a -= 0x60;
+                new_c = true;
+            }
+
+            if initial_half_carry {
+                new_a -= 0x06;
+            }
+        }
+        return ((new_a & 0xFF) as u16, new_c);
     }
 }
 
