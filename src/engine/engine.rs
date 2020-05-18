@@ -2,8 +2,10 @@ use std::fmt;
 
 use crate::engine::gpu::GPU;
 use crate::engine::gpu::GpuState;
+use crate::engine::clock::Clock;
 use crate::engine::registers::Registers;
 use crate::engine::registers::RegisterNames;
+use crate::engine::memory::Memory;
 
 
 extern crate sdl2;
@@ -13,117 +15,12 @@ use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use std::time::Duration;
 
-#[derive(Debug)]
-pub struct Memory {
-    pub rom: Vec<u8>,
-    pub ram: Vec<u8>,
-    pub bank_n: u32,
-    pub ram_bank_n: u32,
-    pub ram_banks: Vec<Vec<u8>>,
-    pub memory_model_is_4_32: bool,
-    pub ram_bank_ops_disabled: bool
-}
-
-impl Memory {
-    //todo: rest of these
-    fn is_mbc1(&self) -> bool {
-        println!("memory type {}", self.rom[0x0147]);
-        return self.rom[0x0147] == 0x01;
-    }
-
-    pub fn set(&mut self, loc: u16, val: u8) {
-        if loc < 0x8000 {
-            if self.is_mbc1() {
-                match loc {
-                    0x0000..=0x1FFF => {
-                        self.ram_bank_ops_disabled = val % 16 != 10;
-                        println!("chaging ram access to {}", self.ram_bank_ops_disabled);
-                    },
-                    0x2000..=0x3FFF => {
-                        if !self.ram_bank_ops_disabled {
-                            if val == 0 {
-                                self.bank_n = 1;
-                            } else {
-                                self.bank_n = (val % 16) as u32;
-                            }
-                            println!("Setting memory to {}", self.bank_n);
-                        }
-                    },
-                    0x4000..=0x5FFF => {
-                        if !self.ram_bank_ops_disabled {
-                            self.ram_bank_n = (val % 4)  as u32;
-                        }
-                    },
-                    0x6000..=0x7FFF => {
-                        self.memory_model_is_4_32 = val % 2 == 1;
-                    },
-                    _ => {
-                        println!("How did we get to {}", loc);
-                    }
-                }
-            } else {
-                println!("writing to rom loc {:x?}->{}", loc, val);
-            }
-        } else if loc >= 0xD000 && loc < 0xE000 {
-            self.ram_banks[self.ram_bank_n as usize - 1][loc as usize - 0xD000] = val;
-        } else {
-            self.ram[loc as usize] = val;
-        }
-    }
-
-    pub fn setLong(&mut self, loc: u16, val: u16){
-        let low_byte = (val & 0xFF) as u8;
-        let high_byte = (val / 0x100) as u8;
-
-        self.set(loc, low_byte);
-        self.set(loc + 1, high_byte);
-    }
-
-    pub fn get(&self, loc: u16) -> u8 {
-        if loc < 0x4000 {
-            return self.rom[loc as usize];
-        } else if loc < 0x8000 {
-            let resolved_loc = (0x4000 * self.bank_n + (loc as u32 - 0x4000)) as usize;
-            println!("asdfasdf {:x}:{:x} -> {:x} ({})", self.bank_n, loc, resolved_loc, resolved_loc);
-            println!("{}", self.rom.len());
-            println!("{}", self.ram.len());
-            return self.rom[resolved_loc];
-        } else if loc >= 0xD000 && loc < 0xE000 {
-            return self.ram_banks[self.ram_bank_n as usize - 1][loc as usize - 0xD000];
-        } else {
-            return self.ram[loc as usize];
-        }
-    }
-
-    pub fn push_stack(&mut self, reg: &mut Registers, val: u16) {
-        let low_byte = (val & 0xFF) as u8;
-        let high_byte = (val / 0x100) as u8;
-
-        let sp = reg.get_register(&RegisterNames::SP);
-
-        self.set(sp - 2, low_byte);
-        self.set(sp - 1, high_byte);
-
-        reg.set_register(&RegisterNames::SP, sp - 2);
-    }
-
-    pub fn pop_stack(&self, reg: &mut Registers) -> u16 {
-        let sp = reg.get_register(&RegisterNames::SP);
-
-        let high_byte = self.get(sp + 1) as u16;
-        let low_byte = self.get(sp + 0) as u16;
-
-        reg.set_register(&RegisterNames::SP, sp + 2);
-
-        return high_byte * 0x100 + low_byte;
-    }
-}
-
 pub struct Engine {
-    pub memory: Memory,
+    pub memory: Box<dyn Memory>,
     pub registers: Registers,
-    pub enable_interrupt: bool,
-    pub gpu: GPU
+    pub enable_interrupt: InterruptState,
+    pub gpu: GPU,
+    pub clock: Clock
 }
 
 impl Engine {
@@ -133,7 +30,6 @@ impl Engine {
         let width = 800;
         let height = 600;
         let window = match headless {
-
             false => video_subsystem.window("Rust Boy", 800, 600).build().unwrap(),
             true => video_subsystem.window("Rust Boy", 800, 600).hidden().build().unwrap()
         };
@@ -166,78 +62,9 @@ impl Engine {
                 self.gpu.draw(&mut canvas, width, height);
             }
 
-            if total_steps == 56905 || total_steps == 56904 {
-                println!("56905 -> {}, {}", self.memory.ram_bank_n, self.memory.get(0xD81B));
-            }
+            self.memory.set(0xFF00, 0x7E);
 
-            // hack to bypass some underlying gpu timing issue
-            // todo: either understand timing issue or see if it actually effects gameplay
-            if total_steps == 16963 {
-                self.registers.set_register(&RegisterNames::A, 0x90);
-            }
-
-            if total_steps >= 35261 && total_steps < 53730 - 1{
-                self.memory.set(0xFF44, 0x00)
-            }
-
-            if total_steps >= 53597 - 1 && total_steps < 53730 - 1{
-                self.memory.set(0xFF44, 0x35)
-            }
-
-            if total_steps >= 53611 - 1 && total_steps < 53730 - 1{
-                self.memory.set(0xFF44, 0x36)
-            }
-
-            if total_steps >= 53674 - 1 && total_steps < 53730 - 1{
-                self.memory.set(0xFF44, 0x37)
-            }
-
-            if total_steps == 53730 - 1 {
-                self.memory.set(0xFF44, 0x38);
-                self.gpu.line = 0x39;
-                self.gpu.time = -210.0;
-                self.gpu.mode = GpuState::H_BLANK;
-            }
-
-            if total_steps == 56726 - 1 {
-                self.memory.set(0xFF44, 0x7A);
-                self.gpu.line = 0x7B;
-                self.gpu.time = -65.0;
-                self.gpu.mode = GpuState::H_BLANK;
-            }
-
-            if total_steps == 57902 - 1 {
-                self.memory.set(0xFF44, 0x8F);
-
-            }
-            if total_steps == 57958 - 1 {
-                self.memory.set(0xFF44, 0x90);
-            }
-
-            if total_steps == 59262 - 1 {
-                self.memory.set(0xFF44, 0x11);
-                self.gpu.line = 0x12;
-                self.gpu.time = 35.0;
-                self.gpu.mode = GpuState::H_BLANK;
-            }
-
-            if total_steps == 66409 - 1 {
-                self.memory.set(0xFF44, 0x8F);
-                self.gpu.line = 0x90 - 144;
-                self.gpu.time = 145.0;
-                self.gpu.mode = GpuState::V_BLANK;
-            }
-
-            if total_steps == 66472 - 1 {
-                self.memory.set(0xFF44, 0x90);
-                self.gpu.line = 0x90 - 144;
-                self.gpu.time = 145.0;
-                self.gpu.mode = GpuState::V_BLANK;
-            }
-
-            self.memory.set(0xFF4D, 0x7E);
-
-            if total_steps > 1_000_000 && false {
+            if total_steps > 1785420 && false{
                 break 'running
             }
         }
@@ -249,6 +76,8 @@ impl Engine {
             let wait_time = self.execute_next_instruction();
 
             self.gpu.tick(&mut self.memory, wait_time);
+            self.clock.tick(&mut self.memory, wait_time);
+
             total_steps += wait_time as u64;
         }
         return total_steps;
@@ -273,9 +102,73 @@ impl Engine {
     }
 
     fn execute_next_instruction(&mut self) -> u32 {
+        let interrupt_flags = self.memory.get(0xFF0F);
+        if self.enable_interrupt == InterruptState::HALT_NO_INTERRUPT {
+
+            if (interrupt_flags & self.memory.get(0xFFFF)) > 0 {
+                self.enable_interrupt = InterruptState::DISABLED;
+                return 4 + 16; //how long should this take?
+            }
+        } else if self.enable_interrupt == InterruptState::ENABLED || self.enable_interrupt == InterruptState::HALT {
+            if ((interrupt_flags & self.memory.get(0xFFFF)) & 0x01) > 0 {
+                self.enable_interrupt = InterruptState::DISABLED;
+                let register_val = self.registers.pc;
+                //println!("{}", self.registers);
+
+                self.memory.push_stack(&mut self.registers, register_val);
+                self.registers.pc = 0x0040;
+                self.memory.set(0xFF0F, interrupt_flags - 0x01);
+                return 16;
+            } else if ((interrupt_flags & self.memory.get(0xFFFF)) & 0x02) > 0 {
+                self.enable_interrupt = InterruptState::DISABLED;
+                let register_val = self.registers.pc;
+                //println!("{}", self.registers);
+
+                self.memory.push_stack(&mut self.registers, register_val);
+                self.registers.pc = 0x0048;
+                self.memory.set(0xFF0F, interrupt_flags - 0x02);
+                return 16;
+            } else if ((interrupt_flags & self.memory.get(0xFFFF)) & 0x04) > 0 {
+                self.enable_interrupt = InterruptState::DISABLED;
+                let register_val = self.registers.pc;
+                //println!("{}", self.registers);
+
+                self.memory.push_stack(&mut self.registers, register_val);
+                self.registers.pc = 0x0050;
+                self.memory.set(0xFF0F, interrupt_flags - 0x04);
+                return 16;
+            } else if ((interrupt_flags & self.memory.get(0xFFFF)) & 0x08) > 0 {
+                self.enable_interrupt = InterruptState::DISABLED;
+                let register_val = self.registers.pc;
+                //println!("{}", self.registers);
+                self.memory.push_stack(&mut self.registers, register_val);
+                self.registers.pc = 0x0058;
+                self.memory.set(0xFF0F, interrupt_flags - 0x08);
+                return 16;
+            } else if ((interrupt_flags & self.memory.get(0xFFFF)) & 0x10) > 0 {
+                self.enable_interrupt = InterruptState::DISABLED;
+                let register_val = self.registers.pc;
+                //println!("{}", self.registers);
+                self.memory.push_stack(&mut self.registers, register_val);
+                self.registers.pc = 0x0060;
+                self.memory.set(0xFF0F, interrupt_flags - 0x10);
+                return 16;
+            }
+        }
+
+
+        if self.enable_interrupt == InterruptState::HALT || self.enable_interrupt == InterruptState::HALT_NO_INTERRUPT {
+            return 4; // sleep until an interrupt happens
+        }
+
+        if self.enable_interrupt == InterruptState::ENABLED_NEXT_OP{
+            self.enable_interrupt = InterruptState::ENABLED;
+            //panic!("enable");
+        }
+
+        //println!("{}", self.registers);
         let first_byte = self.memory.get(self.registers.pc);
 
-        println!("{}", self.registers);
         //println!("{:x?} -> {:x?}", self.registers.pc, first_byte);
         let first_nibble = first_byte >> 4;
         let second_nibble = first_byte & 0x0F;
@@ -304,7 +197,7 @@ impl Engine {
         };
 
         //println!("{:?} = {:?}, {:?}", first_byte, second_nibble, first_nibble);
-        match first_byte {
+        let steps = match first_byte {
             0x00 => {
                 // no op
                 self.registers.incr_pc(1);
@@ -452,7 +345,7 @@ impl Engine {
                 return 8;
             },
 
-            0x2F | 0x3F => {
+            0x2F => {
                 let oldZ = self.registers.is_zero_flag();
 
                 let carry =  if first_byte == 0x2F {self.registers.is_cary_flag()}
@@ -461,7 +354,18 @@ impl Engine {
                 let oldA = self.registers.get_register(&RegisterNames::A);
 
                 self.registers.set_register(&RegisterNames::A, !oldA);
-                self.registers.set_flags(oldZ, true, true, carry);
+                self.registers.set_flags(oldZ, first_byte == 0x2F, first_byte == 0x2F, carry);
+
+                self.registers.incr_pc(1);
+                return 4;
+            },
+
+            0x3F => {
+                let oldZ = self.registers.is_zero_flag();
+
+                let carry =  self.registers.is_cary_flag();
+
+                self.registers.set_flags(oldZ, false, false, !carry);
 
                 self.registers.incr_pc(1);
                 return 4;
@@ -499,12 +403,14 @@ impl Engine {
 
             0x07 => {
                 self.math_to_a(MathNames::RL, 0);
+                self.registers.set_zero_flag(false);
 
                 self.registers.incr_pc(1);
                 return 4;
             },
             0x17 => {
                 self.math_to_a(MathNames::RLC, 0);
+                self.registers.set_zero_flag(false);
 
                 self.registers.incr_pc(1);
                 return 4;
@@ -512,12 +418,14 @@ impl Engine {
 
             0x0F => {
                 self.math_to_a(MathNames::RR, 0);
+                self.registers.set_zero_flag(false);
 
                 self.registers.incr_pc(1);
                 return 4;
             },
             0x1F => {
                 self.math_to_a(MathNames::RRC, 0);
+                self.registers.set_zero_flag(false);
 
                 self.registers.incr_pc(1);
                 return 4;
@@ -547,8 +455,16 @@ impl Engine {
             // load block
             0x40..=0x7F => {
                 if first_byte == 0x76 {
-                    println!("Halt!!!");
                     self.registers.incr_pc(1);
+                    if self.enable_interrupt == InterruptState::DISABLED {
+                        self.enable_interrupt = InterruptState::HALT_NO_INTERRUPT;
+                        //println!("{}", self.registers);
+                        //self.registers.incr_pc(1);
+                        //panic!("weird halt");
+                    } else {
+                        self.enable_interrupt = InterruptState::HALT;
+                    }
+                    //panic!("{:x?}", self.memory.get(0xFFFF));
                     return 4;
                 } else {
                     let resolved_first_register = match first_byte {
@@ -722,7 +638,7 @@ impl Engine {
                 };
 
                 if first_byte == 0xD9 {
-                    self.enable_interrupt = true;
+                    self.enable_interrupt = InterruptState::ENABLED;
                 }
 
                 self.registers.incr_pc(1);
@@ -904,14 +820,21 @@ impl Engine {
                 return 12;
             },
 
+            0xF2 => {
+                let target = self.memory.get(self.registers.get_register(&RegisterNames::C) as u16 + 0xFF00);
+                self.registers.set_register(&RegisterNames::A, target as u16);
+                self.registers.incr_pc(1);
+                return 8;
+            },
+
             //interrupts
             0xF3 => {
-                self.enable_interrupt = false;
+                self.enable_interrupt = InterruptState::DISABLED;
                 self.registers.incr_pc(1);
                 return 4;
             },
             0xFB => {
-                self.enable_interrupt = true;
+                self.enable_interrupt = InterruptState::ENABLED_NEXT_OP;
                 self.registers.incr_pc(1);
                 return 4;
             },
@@ -921,7 +844,6 @@ impl Engine {
                 let d8 = self.get_r8(self.registers.get_register(&RegisterNames::PC) + 1) as i32;
 
                 self.registers.set_register(&RegisterNames::HL, ((target + d8) & 0xFFFF) as u16);
-                println!("asdfsdfsdf {} {}", target, d8);
 
                 self.registers.set_flags(false,
                                 false,
@@ -963,7 +885,9 @@ impl Engine {
 
                 return 16;
             }
-        }
+        };
+
+        return steps;
     }
 
     fn get_register_or_hl(&mut self, register: &RegisterNames) -> u16 {
@@ -977,7 +901,7 @@ impl Engine {
     }
 
     fn set_zero_flag_if_zero(&mut self, register: &RegisterNames) {
-        if self.registers.get_register(register) == 0 {
+        if self.get_register_or_hl(register) == 0 {
             self.registers.set_zero_flag(true);
         }
     }
@@ -1022,27 +946,57 @@ impl Engine {
             initial_val = reg_val as u8;
         }
 
-        //todo: make this not a hack
         let res;
         self.registers.incr_pc(1);
         let steps = match first_byte {
+            0x00..=0x07 => {
+                self.math_to_reg_reshl(&resolved_register, MathNames::RL, 0, true);
+
+                8
+            },
             0x08..=0x0F => {
-                self.math_to_reg(&resolved_register, MathNames::RR, 0);
-                self.set_zero_flag_if_zero(&resolved_register);
+                self.math_to_reg_reshl(&resolved_register, MathNames::RR, 0, true);
+
+                8
+            },
+            0x10..=0x17 => {
+                self.math_to_reg_reshl(&resolved_register, MathNames::RLC, 0, true);
 
                 8
             },
             0x18..=0x1F => {
-                self.math_to_reg(&resolved_register, MathNames::RRC, 0);
-                self.set_zero_flag_if_zero(&resolved_register);
+                self.math_to_reg_reshl(&resolved_register, MathNames::RRC, 0, true);
 
                 8
             },
+            0x20..=0x27 => {
+                let res = (initial_val << 1) & 0xFF;
+
+                self.registers.set_flags(res == 0, false, false, initial_val >= 0x80);
+                if resolved_register == RegisterNames::HL {
+                    self.memory.set(reg_val, res);
+                    return 16;
+                } else {
+                    self.registers.set_register(&resolved_register, res as u16);
+                    return 8;
+                }
+            },
+            0x28..=0x2F => {
+                let res = ((initial_val >> 1) & 0xFF) | (initial_val & 0x80);
+
+                self.registers.set_flags(res == 0, false, false, initial_val % 2 == 1);
+                if resolved_register == RegisterNames::HL {
+                    self.memory.set(reg_val, res);
+                    return 16;
+                } else {
+                    self.registers.set_register(&resolved_register, res as u16);
+                    return 8;
+                }
+            },
             0x30..=0x37 => {
                 let result = (initial_val >> 4) + (initial_val << 4);
-                if result == 0 {
-                    self.registers.set_zero_flag(true);
-                }
+
+                self.registers.set_flags(result == 0, false, false, false);
 
                 if resolved_register == RegisterNames::HL {
                     self.memory.set(reg_val, result);
@@ -1053,7 +1007,7 @@ impl Engine {
                 }
             },
             0x38..=0x3F => {
-                res = initial_val / 2 + if self.registers.is_cary_flag() {1} else {0};
+                res = (initial_val >> 1);
 
                 self.registers.set_flags( res == 0, false, false, initial_val & 1 == 1);
 
@@ -1123,6 +1077,11 @@ impl Engine {
         self.registers.incr_pc(1);
 
         if resolve_hl {
+            // carry isn't changed
+            if self.registers.is_cary_flag() != currentCary {
+                let flags = self.registers.get_register(&RegisterNames::F);
+                self.registers.set_register(&RegisterNames::F, flags ^ 16);
+            }
             return 12;
         } else if register == RegisterNames::BC || register == RegisterNames::DE || register == RegisterNames::HL || register == RegisterNames::SP {
             self.registers.set_register(&RegisterNames::F, currentFlags);
@@ -1148,6 +1107,11 @@ impl Engine {
         self.registers.incr_pc(1);
 
         if resolve_hl {
+            // carry isn't changed
+            if self.registers.is_cary_flag() != currentCary {
+                let flags = self.registers.get_register(&RegisterNames::F);
+                self.registers.set_register(&RegisterNames::F, flags ^ 16);
+            }
             return 12;
         } else if register == RegisterNames::BC || register == RegisterNames::DE || register == RegisterNames::HL || register == RegisterNames::SP {
             self.registers.set_register(&RegisterNames::F, currentFlags);
@@ -1303,14 +1267,14 @@ impl Engine {
                         self.registers.set_flags(result & 0xFF00 == 0,
                                         true,
                                         // see https://robdor.com/2016/08/10/gameboy-emulator-half-carry-flag/
-                                        ((initial_a & 0xFFF) < (other_value & 0xFFF + cary_amt)),
+                                        ((initial_a & 0xFFF) < (other_value & 0xFFF) + cary_amt),
                                         false
                         );
                     } else {
                         self.registers.set_flags(result & 0xFF == 0,
                                         true,
                                         // see https://robdor.com/2016/08/10/gameboy-emulator-half-carry-flag/
-                                        ((initial_a & 0xF) < (other_value & 0xF + cary_amt) & 0xF),
+                                        (initial_a & 0xF) < ((other_value & 0xF) + cary_amt),
                                         false
                         );
                     }
@@ -1320,7 +1284,7 @@ impl Engine {
                         self.registers.set_flags(result & 0xFF00 == 0,
                                         true,
                                         // see https://robdor.com/2016/08/10/gameboy-emulator-half-carry-flag/
-                                        ((initial_a & 0xFFF) < (other_value & 0xFFF + cary_amt)),
+                                        ((initial_a & 0xFFF) < (other_value & 0xFFF) + cary_amt),
                                         true
                         );
                     } else {
@@ -1329,7 +1293,7 @@ impl Engine {
                         self.registers.set_flags(result == 0,
                                         true,
                                         // see https://robdor.com/2016/08/10/gameboy-emulator-half-carry-flag/
-                                        ((initial_a & 0xF) < (other_value & 0xF + cary_amt) & 0xF),
+                                        (initial_a & 0xF) < ((other_value & 0xF) + cary_amt),
                                         true
                         );
                     }
@@ -1381,27 +1345,32 @@ impl Engine {
                 );
             }
             MathNames::RR => {
-                result = initial_a >> 1;
-                self.registers.set_flags(false, false, false, initial_a % 2 == 1);
+                result = (initial_a >> 1) + (initial_a << 7);
+                self.registers.set_flags((result & 0xFF) == 0, false, false, initial_a % 2 == 1);
             }
 
             MathNames::RRC => {
                 result = initial_a >> 1;
                 result += (self.registers.get_register(&RegisterNames::F) / 0x10 % 2 * 0x80);
 
-                self.registers.set_flags(false, false, false, initial_a % 2 == 1);
+                self.registers.set_flags((result & 0xFF) == 0, false, false, initial_a % 2 == 1);
             }
 
             MathNames::RL => {
-                result = initial_a << 1;
-                self.registers.set_flags(false, false, false, initial_a & 0x80 > 0);
+                result = (initial_a << 1) & 0xFF;
+
+                if initial_a >= 0x80 {
+                    result += 1;
+                }
+
+                self.registers.set_flags((result & 0xFF) == 0, false, false, initial_a >= 0x80);
             }
 
             MathNames::RLC => {
-                result = initial_a << 1;
-                result += (self.registers.get_register(&RegisterNames::F) / 0x10 % 2 * 0x80);
+                result = (initial_a << 1) & 0xFF;
+                result += if self.registers.is_cary_flag() {1} else {0};
 
-                self.registers.set_flags(false, false, false, initial_a & 0x80 > 0);
+                self.registers.set_flags((result & 0xFF) == 0, false, false, initial_a >= 0x80);
             }
         };
 
@@ -1450,33 +1419,35 @@ enum MathNames {
     RR, RRC, RL, RLC
 }
 
+#[derive(Debug)]
+#[derive(PartialEq)]
+pub enum InterruptState {
+    ENABLED, DISABLED, ENABLED_NEXT_OP, HALT, HALT_NO_INTERRUPT
+}
+
 #[cfg(test)]
 mod tests {
     use crate::engine::registers::Registers;
     use crate::engine::registers::RegisterNames;
     use crate::engine::engine::Engine;
     use crate::engine::gpu::GPU;
+    use crate::engine::clock::Clock;
+    use crate::engine::memory;
     use crate::engine::engine::Memory;
     use crate::engine::engine::MathNames;
     use crate::engine::make_engine;
+    use crate::engine::engine::InterruptState;
 
     #[test]
     fn test_math_sub(){
         let mut reg = Registers::make_registers();
 
         let mut eng = Engine{
-            memory: Memory{
-                rom: vec![0,0],
-                ram: vec![0,0],
-                bank_n: 0,
-                ram_bank_n: 0,
-                ram_banks: vec![vec![0; 0x1000]; 16],
-                memory_model_is_4_32: false,
-                ram_bank_ops_disabled: false
-            },
+            memory: memory::make_memory(vec![0; 0xFFFF]),
             registers: reg,
-            enable_interrupt: false,
-            gpu: GPU::make_gpu()
+            enable_interrupt: InterruptState::DISABLED,
+            gpu: GPU::make_gpu(),
+            clock: Clock::make_clock()
         };
 
         eng.registers.set_register(&RegisterNames::A, 0);
@@ -1506,18 +1477,11 @@ mod tests {
         let mut reg = Registers::make_registers();
 
         let mut eng = Engine{
-            memory: Memory{
-                rom: vec![0,0],
-                ram: vec![0,0],
-                bank_n: 0,
-                ram_bank_n: 0,
-                ram_banks: vec![vec![0; 0x1000]; 16],
-                memory_model_is_4_32: false,
-                ram_bank_ops_disabled: false
-            },
+            memory: memory::make_memory(vec![0; 0xFFFF]),
             registers: reg,
-            enable_interrupt: false,
-            gpu: GPU::make_gpu()
+            enable_interrupt: InterruptState::DISABLED,
+            gpu: GPU::make_gpu(),
+            clock: Clock::make_clock()
         };
 
         eng.registers.set_register(&RegisterNames::A, 0);
@@ -1656,18 +1620,11 @@ mod tests {
         let mut reg = Registers::make_registers();
 
         let mut eng = Engine{
-            memory: Memory{
-                rom: vec![0,0],
-                ram: vec![0,0],
-                bank_n: 0,
-                ram_bank_n: 0,
-                ram_banks: vec![vec![0; 0x1000]; 16],
-                memory_model_is_4_32: false,
-                ram_bank_ops_disabled: false
-            },
+            memory: memory::make_memory(vec![0; 0xFFFF]),
             registers: reg,
-            enable_interrupt: false,
-            gpu: GPU::make_gpu()
+            enable_interrupt: InterruptState::DISABLED,
+            gpu: GPU::make_gpu(),
+            clock: Clock::make_clock()
         };
 
         eng.registers.set_register(&RegisterNames::A, 0xFF);
@@ -1697,18 +1654,11 @@ mod tests {
         let mut reg = Registers::make_registers();
 
         let mut eng = Engine{
-            memory: Memory{
-                rom: vec![0,0],
-                ram: vec![0,0],
-                bank_n: 0,
-                ram_bank_n: 0,
-                ram_banks: vec![vec![0; 0x1000]; 16],
-                memory_model_is_4_32: false,
-                ram_bank_ops_disabled: false
-            },
+            memory: memory::make_memory(vec![0; 0xFFFF]),
             registers: reg,
-            enable_interrupt: false,
-            gpu: GPU::make_gpu()
+            enable_interrupt: InterruptState::DISABLED,
+            gpu: GPU::make_gpu(),
+            clock: Clock::make_clock()
         };
 
         eng.registers.set_register(&RegisterNames::A, 0xFF);

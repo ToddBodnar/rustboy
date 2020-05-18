@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::engine::engine::Memory;
+use crate::engine::memory::Memory;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
 
@@ -55,7 +55,7 @@ impl GPU {
         canvas.present();
     }
 
-    pub fn tick(&mut self, memory: &mut Memory, ticks: u32){
+    pub fn tick(&mut self, memory: &mut Box<dyn Memory>, ticks: u32){
         self.time += ticks as f32;
         //println!("Gpu time is {} ({:?})", self.time, self.mode);
         //timing based on http://imrannazar.com/GameBoy-Emulation-in-JavaScript:-GPU-Timings, not sure of
@@ -110,52 +110,52 @@ impl GPU {
         };
     }
 
-    fn set_lcdc_y(&mut self, memory: &mut Memory, amt: u8){
+    fn set_lcdc_y(&mut self, memory: &mut Box<dyn Memory>, amt: u8){
         //println!("---Y frame is now {} ({:?})", amt, self.mode);
         memory.set(0xFF44, amt);
     }
 
-    fn get_lcdc_bit(memory: &Memory, loc: u8) -> bool {
+    fn get_lcdc_bit(memory: &mut Box<dyn Memory>, loc: u8) -> bool {
         return memory.get(0xFF40) & (1 << (loc)) > 0;
     }
 
-    fn get_lcdc_control_operation(memory: &Memory) -> bool{
+    fn get_lcdc_control_operation(memory: &mut Box<dyn Memory>) -> bool{
         GPU::get_lcdc_bit(memory, 7)
     }
 
-    fn get_lcdc_window_tile_select(memory: &Memory) -> bool{
+    fn get_lcdc_window_tile_select(memory: &mut Box<dyn Memory>) -> bool{
         GPU::get_lcdc_bit(memory, 6)
     }
 
-    fn get_lcdc_window_on(memory: &Memory) -> bool{
+    fn get_lcdc_window_on(memory: &mut Box<dyn Memory>) -> bool{
         GPU::get_lcdc_bit(memory, 5)
     }
 
-    fn get_lcdc_tile_data(memory: &Memory) -> bool{
+    fn get_lcdc_tile_data(memory: &mut Box<dyn Memory>) -> bool{
         GPU::get_lcdc_bit(memory, 4)
     }
 
-    fn get_lcdc_tile_map(memory: &Memory) -> bool{
+    fn get_lcdc_tile_map(memory: &mut Box<dyn Memory>) -> bool{
         GPU::get_lcdc_bit(memory, 3)
     }
 
-    fn get_lcdc_big_sprite(memory: &Memory) -> bool{
+    fn get_lcdc_big_sprite(memory: &mut Box<dyn Memory>) -> bool{
         GPU::get_lcdc_bit(memory, 2)
     }
 
-    fn get_lcdc_sprite_display(memory: &Memory) -> bool{
+    fn get_lcdc_sprite_display(memory: &mut Box<dyn Memory>) -> bool{
         GPU::get_lcdc_bit(memory, 1)
     }
 
-    fn get_lcdc_bg_window_on(memory: &Memory) -> bool{
+    fn get_lcdc_bg_window_on(memory: &mut Box<dyn Memory>) -> bool{
         GPU::get_lcdc_bit(memory, 0)
     }
 
-    fn get_lyc_ly_eq_set(memory: &Memory) -> bool {
+    fn get_lyc_ly_eq_set(memory: &mut Box<dyn Memory>) -> bool {
         memory.get(0xFF41) & (1 << 6) > 0
     }
 
-    fn update_stat(&self, memory: &mut Memory) {
+    fn update_stat(&self, memory: &mut Box<dyn Memory>) {
         let mut val = 0;
 
         if GPU::get_lyc_ly_eq_set(memory) {
@@ -181,9 +181,13 @@ impl GPU {
         };
 
         memory.set(0xFF41, val);
+
+        if self.mode == GpuState::V_BLANK {
+            memory.setInterruptFlag(0);
+        }
     }
 
-    fn draw_line(&mut self, memory: &mut Memory, line: u8){
+    fn draw_line(&mut self, memory: &mut Box<dyn Memory>, line: u8){
         let map_loc = match GPU::get_lcdc_tile_map(memory) {
             true  => 0x9C00 as usize,
             false => 0x9800 as usize
@@ -192,7 +196,7 @@ impl GPU {
         let x_offset = self.get_x_offset(memory);
         let tile_loc = match GPU::get_lcdc_tile_data(memory) {
             true  => 0x8000 as i32,
-            false => 0x8800 as i32
+            false => 0x9000 as i32
         };
 
         let palet = memory.get(0xFF47);
@@ -254,15 +258,16 @@ impl GPU {
         }
     }
 
-    fn get_y_offset(&mut self, memory: &mut Memory) -> i32 {
+    fn get_y_offset(&mut self, memory: &mut Box<dyn Memory>) -> i32 {
         memory.get(0xFF42) as i32 & 0xFF * 0
     }
-    fn get_x_offset(&mut self, memory: &mut Memory) -> i32 {
+    fn get_x_offset(&mut self, memory: &mut Box<dyn Memory>) -> i32 {
         memory.get(0xFF43) as i32 & 0xFF
     }
 }
 
 #[derive(Debug)]
+#[derive(PartialEq)]
 pub enum GpuState{
    SCAN_OAM,
    SCAN_VRAM,

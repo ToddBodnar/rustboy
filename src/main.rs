@@ -63,4 +63,12 @@ fn main() {
     for i in 0..144 {
         //println!("{:?}", eng.gpu.lcd[i]);
     }
+
+    println!("\nTimer\n");
+    println!("{:x?}, {:x?}", eng.memory.get(0xFF06), eng.memory.get(0xFF07));
+
+
+    println!("\nInterrupts\n");
+    println!("{:x?} x {:x?}", eng.memory.get(0xFF0F), eng.memory.get(0xFFFF));
+    println!("{:?}", eng.enable_interrupt);
 }
