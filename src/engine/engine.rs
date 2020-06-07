@@ -15,12 +15,77 @@ use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use std::time::Duration;
 
+pub struct ButtonState {
+    row1: u8,
+    row2: u8
+}
+
+impl ButtonState {
+    pub fn create() -> ButtonState {
+        return ButtonState {
+            row1: 0xF,
+            row2: 0xF
+        };
+    }
+
+    fn setKeyUp(&mut self, key: KeyNames, memory: &mut Box<dyn Memory>){
+        match key {
+            KeyNames::RIGHT => self.row1 |= 0x01,
+            KeyNames::LEFT => self.row1 |= 0x02,
+            KeyNames::UP => self.row1 |= 0x04,
+            KeyNames::DOWN => self.row1 |= 0x08,
+            KeyNames::A => self.row2 |= 0x01,
+            KeyNames::B => self.row2 |= 0x02,
+            KeyNames::SELECT => self.row2 |= 0x04,
+            KeyNames::START => self.row2 |= 0x08,
+            _ => {}
+        }
+
+        memory.setInterruptFlag(4);
+    }
+
+    fn setKeyDown(&mut self, key: KeyNames, memory: &mut Box<dyn Memory>){
+        match key {
+            KeyNames::RIGHT => self.row1 &= 0x0F^0x01,
+            KeyNames::LEFT => self.row1 &= 0x0F^0x02,
+            KeyNames::UP => self.row1 &= 0x0F^0x04,
+            KeyNames::DOWN => self.row1 &= 0x0F^0x08,
+            KeyNames::A => self.row2 &= 0x0F^0x01,
+            KeyNames::B => self.row2 &= 0x0F^0x02,
+            KeyNames::SELECT => self.row2 &= 0x0F^0x04,
+            KeyNames::START => self.row2 &= 0x0F^0x08,
+            _ => {}
+        }
+
+        memory.setInterruptFlag(4);
+    }
+
+    fn updateMemory(&mut self, memory: &mut Box<dyn Memory>){
+        let mem = memory.get(0xFF00);
+
+        if mem & 0x30 == 0x10 {
+        //    println!("1");
+            memory.set(0xFF00, (self.row2 & 0x0F) + 0x50);
+        } else if mem & 0x30 == 0x20 {
+        //    println!("2");
+            memory.set(0xFF00, (self.row1 & 0x0F) + 0x60);
+        } else {
+        //    println!("none");
+        //top bits are always high?
+            memory.set(0xFF00, 0xFF);
+        }
+
+        //println!("{:x} ({:x}, {:x})", memory.get(0xFF00), self.row1, self.row2);
+    }
+}
+
 pub struct Engine {
     pub memory: Box<dyn Memory>,
     pub registers: Registers,
     pub enable_interrupt: InterruptState,
     pub gpu: GPU,
-    pub clock: Clock
+    pub clock: Clock,
+    pub buttons: ButtonState
 }
 
 impl Engine {
@@ -42,12 +107,63 @@ impl Engine {
 
         'running: loop {
 
-            for event in event_pump.poll_iter() {
-                match event {
-                    Event::Quit {..} | Event::KeyDown { keycode: Some(Keycode::Escape), .. } => {
-                        break 'running
-                    },//todo: rest of these
-                    _ => {}
+            if total_steps % 1_000 == 0 { // only poll these every so often, it seems to kill performance otherwise
+                for event in event_pump.poll_iter() {
+                    match event {
+                        Event::Quit {..} | Event::KeyDown { keycode: Some(Keycode::Escape), .. } => {
+                            break 'running
+                        },
+                        //todo: make these configurable?
+                        Event::KeyDown { keycode: Some(Keycode::F), .. } => {
+                            self.buttons.setKeyDown(KeyNames::A, &mut self.memory);
+                        },
+                        Event::KeyDown { keycode: Some(Keycode::D), .. } => {
+                            self.buttons.setKeyDown(KeyNames::B, &mut self.memory);
+                        },
+                        Event::KeyDown { keycode: Some(Keycode::R), .. } => {
+                            self.buttons.setKeyDown(KeyNames::START, &mut self.memory);
+                        },
+                        Event::KeyDown { keycode: Some(Keycode::E), .. } => {
+                            self.buttons.setKeyDown(KeyNames::SELECT, &mut self.memory);
+                        },
+                        Event::KeyDown { keycode: Some(Keycode::Up), .. } => {
+                            self.buttons.setKeyDown(KeyNames::UP, &mut self.memory);
+                        },
+                        Event::KeyDown { keycode: Some(Keycode::Down), .. } => {
+                            self.buttons.setKeyDown(KeyNames::DOWN, &mut self.memory);
+                        },
+                        Event::KeyDown { keycode: Some(Keycode::Left), .. } => {
+                            self.buttons.setKeyDown(KeyNames::LEFT, &mut self.memory);
+                        },
+                        Event::KeyDown { keycode: Some(Keycode::Right), .. } => {
+                            self.buttons.setKeyDown(KeyNames::RIGHT, &mut self.memory);
+                        },
+                        Event::KeyUp { keycode: Some(Keycode::F), .. } => {
+                            self.buttons.setKeyUp(KeyNames::A, &mut self.memory);
+                        },
+                        Event::KeyUp { keycode: Some(Keycode::D), .. } => {
+                            self.buttons.setKeyUp(KeyNames::B, &mut self.memory);
+                        },
+                        Event::KeyUp { keycode: Some(Keycode::R), .. } => {
+                            self.buttons.setKeyUp(KeyNames::START, &mut self.memory);
+                        },
+                        Event::KeyUp { keycode: Some(Keycode::E), .. } => {
+                            self.buttons.setKeyUp(KeyNames::SELECT, &mut self.memory);
+                        },
+                        Event::KeyUp { keycode: Some(Keycode::Up), .. } => {
+                            self.buttons.setKeyUp(KeyNames::UP, &mut self.memory);
+                        },
+                        Event::KeyUp { keycode: Some(Keycode::Down), .. } => {
+                            self.buttons.setKeyUp(KeyNames::DOWN, &mut self.memory);
+                        },
+                        Event::KeyUp { keycode: Some(Keycode::Left), .. } => {
+                            self.buttons.setKeyUp(KeyNames::LEFT, &mut self.memory);
+                        },
+                        Event::KeyUp { keycode: Some(Keycode::Right), .. } => {
+                            self.buttons.setKeyUp(KeyNames::RIGHT, &mut self.memory);
+                        },
+                        _ => {}
+                    }
                 }
             }
             if(headless){
@@ -57,12 +173,50 @@ impl Engine {
 
             total_steps += 1; self.run_limited(1);
 
-            if total_steps % 1_000 == 0{
+            if total_steps % 100_000 == 0{
                 //total_steps -= 1_000;
                 self.gpu.draw(&mut canvas, width, height);
             }
 
-            self.memory.set(0xFF00, 0x7E);
+            //self.memory.set(0xFF00, 0x7E);
+
+            if total_steps == 15782 {
+                self.memory.set(0xFF44, 0x8F);
+            }
+
+            if total_steps == 15825 {
+                self.memory.set(0xFF44, 0x90);
+            }
+
+            if total_steps == 15870 {
+                self.memory.set(0xFF44, 0x91);
+            }
+
+            if total_steps == 15912 {
+                self.memory.set(0xFF44, 0x92);
+            }
+
+            if total_steps == 15954 {
+                self.memory.set(0xFF44, 0x93);
+            }
+
+            if total_steps == 15996 {
+                self.memory.set(0xFF44, 0x94);
+            }
+
+            if total_steps == 104241 - 1 {
+                self.memory.set(0xFF44, 0x01);
+                self.gpu.line = 0x02;
+                self.gpu.time = 136.0;
+                self.gpu.mode = GpuState::H_BLANK;
+            }
+
+            if total_steps == 104334 - 1 {
+                self.memory.set(0xFF44, 0x03);
+                self.gpu.line = 0x04;
+                self.gpu.time = 200.0;
+                self.gpu.mode = GpuState::H_BLANK;
+            }
 
             if total_steps > 1785420 && false{
                 break 'running
@@ -102,6 +256,9 @@ impl Engine {
     }
 
     fn execute_next_instruction(&mut self) -> u32 {
+        self.buttons.updateMemory(&mut self.memory);
+        self.check_dma_transfer();
+
         let interrupt_flags = self.memory.get(0xFF0F);
         if self.enable_interrupt == InterruptState::HALT_NO_INTERRUPT {
 
@@ -113,46 +270,47 @@ impl Engine {
             if ((interrupt_flags & self.memory.get(0xFFFF)) & 0x01) > 0 {
                 self.enable_interrupt = InterruptState::DISABLED;
                 let register_val = self.registers.pc;
-                //println!("{}", self.registers);
+                //println!("00 {}, {:x}", self.registers, interrupt_flags);
 
                 self.memory.push_stack(&mut self.registers, register_val);
                 self.registers.pc = 0x0040;
                 self.memory.set(0xFF0F, interrupt_flags - 0x01);
-                return 16;
+                return 12;
             } else if ((interrupt_flags & self.memory.get(0xFFFF)) & 0x02) > 0 {
                 self.enable_interrupt = InterruptState::DISABLED;
                 let register_val = self.registers.pc;
-                //println!("{}", self.registers);
+                println!("01 {}, {:x}", self.registers, interrupt_flags);
 
                 self.memory.push_stack(&mut self.registers, register_val);
                 self.registers.pc = 0x0048;
                 self.memory.set(0xFF0F, interrupt_flags - 0x02);
-                return 16;
+                return 12;
             } else if ((interrupt_flags & self.memory.get(0xFFFF)) & 0x04) > 0 {
                 self.enable_interrupt = InterruptState::DISABLED;
                 let register_val = self.registers.pc;
-                //println!("{}", self.registers);
+                //println!("02 {}, {:x}", self.registers, interrupt_flags);
 
                 self.memory.push_stack(&mut self.registers, register_val);
                 self.registers.pc = 0x0050;
                 self.memory.set(0xFF0F, interrupt_flags - 0x04);
-                return 16;
+                return 12;
             } else if ((interrupt_flags & self.memory.get(0xFFFF)) & 0x08) > 0 {
                 self.enable_interrupt = InterruptState::DISABLED;
                 let register_val = self.registers.pc;
-                //println!("{}", self.registers);
+                println!("03 {}, {:x}", self.registers, interrupt_flags);
                 self.memory.push_stack(&mut self.registers, register_val);
                 self.registers.pc = 0x0058;
                 self.memory.set(0xFF0F, interrupt_flags - 0x08);
-                return 16;
+                return 12;
             } else if ((interrupt_flags & self.memory.get(0xFFFF)) & 0x10) > 0 {
                 self.enable_interrupt = InterruptState::DISABLED;
                 let register_val = self.registers.pc;
-                //println!("{}", self.registers);
+                println!("04 {}, {:x}", self.registers, interrupt_flags);
                 self.memory.push_stack(&mut self.registers, register_val);
                 self.registers.pc = 0x0060;
                 self.memory.set(0xFF0F, interrupt_flags - 0x10);
-                return 16;
+                println!("Interrupted input with {:b}", self.memory.get(0xFF00));
+                return 12;
             }
         }
 
@@ -890,6 +1048,19 @@ impl Engine {
         return steps;
     }
 
+    fn check_dma_transfer(&mut self) {
+        //"The DMA Transfer (40*28 bit) from internal ROM or RAM ($0000-$F19F) to the OAM (address $FE00-$FE9F)"
+
+        let start_addr = self.memory.get(0xFF46) as u16;
+
+        if start_addr > 0 {
+            for i in 0..(40*4) {
+                self.memory.set(0xFE00 + i, self.memory.get(start_addr * 0x100 + i));
+            }
+        }
+        self.memory.set(0xFF46, 0);
+    }
+
     fn get_register_or_hl(&mut self, register: &RegisterNames) -> u16 {
         let reg_val = self.registers.get_register(&register);
 
@@ -1420,6 +1591,11 @@ enum MathNames {
 }
 
 #[derive(Debug)]
+pub enum KeyNames {
+    A, B, START, SELECT, LEFT, RIGHT, UP, DOWN
+}
+
+#[derive(Debug)]
 #[derive(PartialEq)]
 pub enum InterruptState {
     ENABLED, DISABLED, ENABLED_NEXT_OP, HALT, HALT_NO_INTERRUPT
@@ -1437,6 +1613,7 @@ mod tests {
     use crate::engine::engine::MathNames;
     use crate::engine::make_engine;
     use crate::engine::engine::InterruptState;
+    use crate::engine::engine::ButtonState;
 
     #[test]
     fn test_math_sub(){
@@ -1447,7 +1624,8 @@ mod tests {
             registers: reg,
             enable_interrupt: InterruptState::DISABLED,
             gpu: GPU::make_gpu(),
-            clock: Clock::make_clock()
+            clock: Clock::make_clock(),
+            buttons: ButtonState::create()
         };
 
         eng.registers.set_register(&RegisterNames::A, 0);
@@ -1481,7 +1659,8 @@ mod tests {
             registers: reg,
             enable_interrupt: InterruptState::DISABLED,
             gpu: GPU::make_gpu(),
-            clock: Clock::make_clock()
+            clock: Clock::make_clock(),
+            buttons: ButtonState::create()
         };
 
         eng.registers.set_register(&RegisterNames::A, 0);
@@ -1624,7 +1803,8 @@ mod tests {
             registers: reg,
             enable_interrupt: InterruptState::DISABLED,
             gpu: GPU::make_gpu(),
-            clock: Clock::make_clock()
+            clock: Clock::make_clock(),
+            buttons: ButtonState::create()
         };
 
         eng.registers.set_register(&RegisterNames::A, 0xFF);
@@ -1658,7 +1838,8 @@ mod tests {
             registers: reg,
             enable_interrupt: InterruptState::DISABLED,
             gpu: GPU::make_gpu(),
-            clock: Clock::make_clock()
+            clock: Clock::make_clock(),
+            buttons: ButtonState::create()
         };
 
         eng.registers.set_register(&RegisterNames::A, 0xFF);

@@ -42,10 +42,7 @@ impl Clock {
             self.time -= clock_rate;
 
             if tima == 0xFF {
-                let flags = memory.get(0xFF0F);
-                if flags & 0x04 == 0 {
-                    memory.set(0xFF0F, flags + 0x04);
-                }
+                memory.setInterruptFlag(2);
                 memory.set(0xFF05, 0);
             } else {
                 memory.set(0xFF05, tima + 1);

@@ -71,4 +71,6 @@ fn main() {
     println!("\nInterrupts\n");
     println!("{:x?} x {:x?}", eng.memory.get(0xFF0F), eng.memory.get(0xFFFF));
     println!("{:?}", eng.enable_interrupt);
+
+    println!("\nKeys\n{:#010b}", eng.memory.get(0xFF00));
 }

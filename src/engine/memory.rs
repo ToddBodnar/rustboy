@@ -1,5 +1,6 @@
 use crate::engine::registers::Registers;
 use crate::engine::registers::RegisterNames;
+use crate::engine::engine::KeyNames;
 
 pub trait Memory {
     fn set(&mut self, loc: u16, val: u8);
@@ -8,8 +9,8 @@ pub trait Memory {
 
     fn setInterruptFlag(&mut self, flag: u8) {
         let interrupts = self.get(0xFF0F);
-        if (interrupts & (1 << flag)) == 0 {
-            self.set(0xFF0F,  interrupts + (1 << flag));
+        if (interrupts & (1 << (flag))) == 0 {
+            self.set(0xFF0F,  interrupts + (1 << (flag)));
         }
     }
 
@@ -62,7 +63,6 @@ pub struct ROMOnlyMemory {
 impl ROMOnlyMemory {
     fn make_memory(rom: Vec<u8>) -> impl Memory {
         println!("Making ROM only Memory");
-        //unsafe {rom.set_len(0xFFFF+1);}
         ROMOnlyMemory {
             ram: vec![0; 0xFFFF + 1],
             rom: rom
@@ -72,13 +72,17 @@ impl ROMOnlyMemory {
 
 impl Memory for ROMOnlyMemory {
     fn set(&mut self, loc: u16, val: u8) {
-        if loc >= 0x8000 {
+        if loc >= 0xE000 && loc < 0xF000{
+            self.set(loc - 0x2000, val);
+        } else if loc >= 0x8000 {
             self.ram[loc as usize] = val;
         }
     }
 
     fn get(&self, loc: u16) -> u8 {
-        if loc >= 0x8000 {
+        if loc >= 0xE000 && loc < 0xF000{
+            return self.get(loc - 0x2000);
+        } else if loc >= 0x8000 {
             return self.ram[loc as usize];
         }
         return self.rom[loc as usize];
@@ -102,7 +106,6 @@ pub struct MBC1Memory {
 impl MBC1Memory {
     fn make_memory(rom: Vec<u8>) -> impl Memory {
         println!("Making MBC1 Memory");
-        //unsafe {rom.set_len(0xFFFF+1);}
         MBC1Memory {
             ram:  vec![0; 0xFFFF + 1],
             rom: rom,
@@ -145,6 +148,8 @@ impl Memory for MBC1Memory {
             }
         } else if loc >= 0xD000 && loc < 0xE000 {
             self.ram_banks[self.ram_bank_n as usize - 1][loc as usize - 0xD000] = val;
+        } else if loc >= 0xE000 && loc < 0xF000{
+            return self.set(loc - 0x2000, val);
         } else {
             self.ram[loc as usize] = val;
         }
@@ -159,6 +164,8 @@ impl Memory for MBC1Memory {
             return self.rom[resolved_loc];
         } else if loc >= 0xD000 && loc < 0xE000 {
             return self.ram_banks[self.ram_bank_n as usize - 1][loc as usize - 0xD000];
+        } else if loc >= 0xE000 && loc < 0xF000{
+            return self.get(loc - 0x2000);
         } else {
             return self.ram[loc as usize];
         }

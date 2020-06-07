@@ -256,6 +256,34 @@ impl GPU {
                 }
             }
         }
+
+        for sprite in 0..40 {
+            self.draw_line_sprite(memory, line, sprite, x_offset, inner_line);
+        }
+    }
+
+    fn draw_line_sprite(&mut self, memory: &mut Box<dyn Memory>, line: u8, sprite: u16, x:i32, y:i32) {
+        let oam_loc = (0xFE00 + sprite * 4) as u16;
+
+        let sprite_y_coord = memory.get(oam_loc) as i32 - 16;
+
+        let sprite_x_coord = memory.get(oam_loc + 1) as i32 - 8;
+
+        if sprite_y_coord < y || sprite_y_coord > y + 8 {
+            //println!("skip!");
+            return;
+        }
+
+        //println!("{} -> {},{}", sprite, sprite_x_coord, sprite_y_coord);
+        //println!("{},{}", x,y);
+
+        for i in 0..8 {
+            let target = ((sprite_x_coord + i - x) as usize);
+            if target < 0 || target >= 160 {
+                continue;
+            }
+            self.lcd[line as usize][target] = 25 * i as u8;
+        }
     }
 
     fn get_y_offset(&mut self, memory: &mut Box<dyn Memory>) -> i32 {

@@ -22,15 +22,15 @@ impl Registers {
             pc: 0x100,
             sp: 0xFFFE,
 
-            a: 0x11,
+            a: 0x01,
             b: 0x00,
-            c: 0x00,
+            c: 0x13,
             d: 0x00,
-            e: 0x08,
-            f: 0x80,
+            e: 0xd8,
+            f: 0xb0,
 
-            h: 0x00,
-            l: 0x7c
+            h: 0x01,
+            l: 0x4d
         };
     }
 
