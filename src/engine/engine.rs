@@ -270,7 +270,7 @@ impl Engine {
             if ((interrupt_flags & self.memory.get(0xFFFF)) & 0x01) > 0 {
                 self.enable_interrupt = InterruptState::DISABLED;
                 let register_val = self.registers.pc;
-                //println!("00 {}, {:x}", self.registers, interrupt_flags);
+                println!("00 {}, {:x}", self.registers, interrupt_flags);
 
                 self.memory.push_stack(&mut self.registers, register_val);
                 self.registers.pc = 0x0040;

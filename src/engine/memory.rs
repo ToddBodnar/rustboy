@@ -83,6 +83,7 @@ impl Memory for ROMOnlyMemory {
         if loc >= 0xE000 && loc < 0xF000{
             return self.get(loc - 0x2000);
         } else if loc >= 0x8000 {
+            
             return self.ram[loc as usize];
         }
         return self.rom[loc as usize];
