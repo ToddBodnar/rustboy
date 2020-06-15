@@ -173,15 +173,40 @@ impl Engine {
 
             total_steps += 1; self.run_limited(1);
 
-            if total_steps % 100_000 == 0{
-                //total_steps -= 1_000;
-                self.gpu.draw(&mut canvas, width, height);
-            }
+            self.gpu.draw(&mut canvas, width, height);
 
             //self.memory.set(0xFF00, 0x7E);
 
-            if total_steps == 15782 {
-                self.memory.set(0xFF44, 0x8F);
+            if total_steps == 44 {
+
+                    self.memory.set(0xFF44, 0x01);
+                    self.gpu.line = 0x01;
+                    self.gpu.time = 230.0;
+                    self.gpu.mode = GpuState::H_BLANK;
+            }
+
+            if total_steps == 6113 {
+
+                    self.memory.set(0xFF44, 0x8F);
+                    //self.gpu.line = 0x8F;
+                    self.gpu.time = 0.0;
+                    //self.gpu.mode = GpuState::V_BLANK;
+            }
+
+            if total_steps == 6155 {
+
+                    self.memory.set(0xFF44, 0x90);
+                    //self.gpu.line = 0x8F;
+                    self.gpu.time = 0.0;
+                    //self.gpu.mode = GpuState::V_BLANK;
+            }
+
+            if total_steps == 6200 {
+
+                    self.memory.set(0xFF44, 0x91);
+                    //self.gpu.line = 0x8F;
+                    self.gpu.time = 0.0;
+                    //self.gpu.mode = GpuState::V_BLANK;
             }
 
             if total_steps == 15825 {

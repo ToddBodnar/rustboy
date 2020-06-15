@@ -50,6 +50,7 @@ pub fn make_memory(rom: Vec::<u8>) -> Box<dyn Memory> {
     return match(rom[0x0147]) {
         0x00 => Box::new(ROMOnlyMemory::make_memory(rom)),
         0x01 | 0x02 | 0x03 => Box::new(MBC1Memory::make_memory(rom)),
+        0x13 => Box::new(MBC3Memory::make_memory(rom)),
         _ => panic!("Don't understand cartridge type {:x?}", rom[0x0147])
     };
 }
@@ -83,7 +84,7 @@ impl Memory for ROMOnlyMemory {
         if loc >= 0xE000 && loc < 0xF000{
             return self.get(loc - 0x2000);
         } else if loc >= 0x8000 {
-            
+
             return self.ram[loc as usize];
         }
         return self.rom[loc as usize];
@@ -165,6 +166,91 @@ impl Memory for MBC1Memory {
             return self.rom[resolved_loc];
         } else if loc >= 0xD000 && loc < 0xE000 {
             return self.ram_banks[self.ram_bank_n as usize - 1][loc as usize - 0xD000];
+        } else if loc >= 0xE000 && loc < 0xF000{
+            return self.get(loc - 0x2000);
+        } else {
+            return self.ram[loc as usize];
+        }
+    }
+}
+
+
+
+
+#[derive(Debug)]
+pub struct MBC3Memory {
+    rom: Vec<u8>,
+    ram: Vec<u8>,
+    bank_n: u32,
+    ram_bank_n: u32,
+    ram_banks: Vec<Vec<u8>>,
+    memory_model_is_4_32: bool,
+    ram_bank_ops_disabled: bool
+}
+
+impl MBC3Memory {
+    fn make_memory(rom: Vec<u8>) -> impl Memory {
+        println!("Making MBC3 Memory");
+        MBC3Memory {
+            ram:  vec![0; 0xFFFF + 1],
+            rom: rom,
+            bank_n: 1,
+            ram_bank_n: 1,
+            ram_banks: vec![vec![0; 0x1000]; 16],
+            memory_model_is_4_32: false,
+            ram_bank_ops_disabled: false
+        }
+    }
+}
+
+impl Memory for MBC3Memory {
+    fn set(&mut self, loc: u16, val: u8) {
+        if loc < 0x8000 {
+            match loc {
+                0x0000..=0x1FFF => {
+                    self.ram_bank_ops_disabled = val % 16 != 10;
+                },
+                0x2000..=0x3FFF => {
+                    if !self.ram_bank_ops_disabled {
+                        if (val & 0b01111111) == 0 {
+                            self.bank_n = 1;
+                        } else {
+                            self.bank_n = (val & 0b01111111) as u32;
+                        }
+                    }
+                },
+                0x4000..=0x5FFF => {
+                    self.ram_bank_n = val as u32;
+                },
+                0x6000..=0x7FFF => {
+                        //todo: clock logic
+                },
+                _ => {
+                    println!("How did we get to {}", loc);
+                }
+            }
+        } else if loc >= 0xA000 && loc < 0xC000 {
+            self.ram_banks[self.ram_bank_n as usize][loc as usize - 0xA000] = val;
+        } else if loc >= 0xE000 && loc < 0xF000{
+            return self.set(loc - 0x2000, val);
+        } else {
+            self.ram[loc as usize] = val;
+        }
+
+        if loc < 0xFF00 {
+            //println!("setting {:x} to {:x}", loc, val);
+        }
+    }
+
+    fn get(&self, loc: u16) -> u8 {
+        if loc < 0x4000 {
+            return self.rom[loc as usize];
+        } else if loc < 0x8000 {
+            let resolved_loc = (0x4000 * self.bank_n + (loc as u32 - 0x4000)) as usize;
+
+            return self.rom[resolved_loc];
+        } else if loc >= 0xA000 && loc < 0xC000 {
+            return self.ram_banks[self.ram_bank_n as usize][loc as usize - 0xA000];
         } else if loc >= 0xE000 && loc < 0xF000{
             return self.get(loc - 0x2000);
         } else {

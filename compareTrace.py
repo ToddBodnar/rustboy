@@ -4,7 +4,10 @@ prevEx = None
 prevAc = None
 
 for expected, actual in zip(open("expected/mgba.out"), open("log.out")):
-    if not expected[0:68] == actual[0:68]:
+    cleaned = expected
+    for i in range(1,10):
+        cleaned = cleaned.replace("PC: 0"+str(i), "PC: 00")
+    if not cleaned[0:68] == actual[0:68]:
         print("Problem on", line)
         print(prevEx)
         print(prevAc)

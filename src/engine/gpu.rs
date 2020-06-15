@@ -1,4 +1,5 @@
 use std::fmt;
+use std::cmp;
 
 use crate::engine::memory::Memory;
 use sdl2::pixels::Color;
@@ -9,7 +10,8 @@ pub struct GPU {
     pub time: f32,
     pub line: u8,
     pub mode: GpuState,
-    pub lcd: Vec<Vec<u8>>
+    pub lcd: Vec<Vec<u8>>,
+    pub time_to_draw: bool
 }
 
 impl GPU {
@@ -18,7 +20,8 @@ impl GPU {
             time: 0.0,
             line: 0,
             mode: GpuState::H_BLANK,
-            lcd: vec![vec![0; 160]; 144]
+            lcd: vec![vec![0; 160]; 144],
+            time_to_draw: true
         };
     }
 
@@ -26,7 +29,12 @@ impl GPU {
         canvas : &mut sdl2::render::Canvas<C>,
         width: u32,
         height: u32){
-        //todo
+
+        if ! self.time_to_draw {
+            return;
+        }
+
+        self.time_to_draw = false;
 
         let mut scale = 1.0 as f64;
 
@@ -70,6 +78,7 @@ impl GPU {
                     if self.line == 143 {
                         self.mode = GpuState::V_BLANK;
                         self.line = 0;
+                        self.time_to_draw = true;
                     } else {
                         self.mode = GpuState::SCAN_OAM;
                         self.draw_line(memory, self.line);
@@ -116,7 +125,7 @@ impl GPU {
     }
 
     fn get_lcdc_bit(memory: &mut Box<dyn Memory>, loc: u8) -> bool {
-        return memory.get(0xFF40) & (1 << (loc)) > 0;
+        return (memory.get(0xFF40) & (1 << (loc))) > 0;
     }
 
     fn get_lcdc_control_operation(memory: &mut Box<dyn Memory>) -> bool{
@@ -147,7 +156,7 @@ impl GPU {
         GPU::get_lcdc_bit(memory, 1)
     }
 
-    fn get_lcdc_bg_window_on(memory: &mut Box<dyn Memory>) -> bool{
+    fn get_lcdc_bg_on(memory: &mut Box<dyn Memory>) -> bool{
         GPU::get_lcdc_bit(memory, 0)
     }
 
@@ -188,22 +197,63 @@ impl GPU {
     }
 
     fn draw_line(&mut self, memory: &mut Box<dyn Memory>, line: u8){
+
+        let inner_line = (line as i32 + self.get_y_offset(memory)) % 0x1000;
+        let x_offset = self.get_x_offset(memory);
+
         let map_loc = match GPU::get_lcdc_tile_map(memory) {
             true  => 0x9C00 as usize,
             false => 0x9800 as usize
         };
-        let inner_line = (line as i32 + self.get_y_offset(memory)) % 0x1000;
-        let x_offset = self.get_x_offset(memory);
         let tile_loc = match GPU::get_lcdc_tile_data(memory) {
             true  => 0x8000 as i32,
             false => 0x9000 as i32
         };
 
+        if GPU::get_lcdc_bg_on(memory) {
+            self.draw_line_tiles(memory, 0, 160, line, tile_loc, x_offset, inner_line, map_loc);
+        }
+
+        if GPU::get_lcdc_window_on(memory) {
+            let window_map_loc = match GPU::get_lcdc_window_tile_select(memory) {
+                true  => 0x9C00 as usize,
+                false => 0x9800 as usize
+            };
+            let window_tile_loc = match GPU::get_lcdc_tile_data(memory) {
+                true  => 0x8000 as i32,
+                false => 0x9000 as i32
+            };
+
+            if line >= memory.get(0xFF4A) {
+                println!("Drawing window from {} to {} on line {}",  memory.get(0xFF4A) as i32 - 7, 160, line);
+                println!("Map is {:x}, tiles are {:x}", window_map_loc, window_tile_loc);
+                self.draw_line_tiles(memory, memory.get(0xFF4A) as i32 - 7, 160, line, window_tile_loc, 0, line as i32, window_map_loc);
+            }
+        }
+
+
+        for sprite in 0..40 {
+            self.draw_line_sprite(memory, line, sprite, x_offset, inner_line);
+        }
+    }
+
+    fn draw_line_tiles(&mut self,
+                        memory: &mut Box<dyn Memory>,
+                        start_x: i32,
+                        end_x: i32,
+                        line: u8,
+                        tile_loc: i32,
+                        x_offset: i32,
+                        inner_line: i32,
+                        map_loc: usize) {
         let palet = memory.get(0xFF47);
 
-        for x in 0..(160 / 8) {
-            //println!("{},{} -> {}",x,line, ((x as i16 * 8 + x_offset) / 8 + (inner_line / 8 as i16 * 32)+ map_loc as i16) as u16);
+        for x in cmp::max(start_x, 0)..(end_x / 8) {
             let mut tile_id = memory.get(((x as i32 * 8 + x_offset) / 8 + (inner_line / 8 as i32 * 32)+ map_loc as i32) as u16) as i32;
+
+
+            println!("{:x}, {:x}, {:x}", x, map_loc, tile_id);
+            println!("{:x}", ((x as i32 * 8 + x_offset) / 8 + (inner_line / 8 as i32 * 32)+ map_loc as i32) as u16);
 
             if !GPU::get_lcdc_tile_data(memory) {
                 if tile_id > 127 {
@@ -211,27 +261,13 @@ impl GPU {
                 }
             }
 
-
-            //tile_id = 0;
-
             let tile_low = memory.get((tile_id * 2 * 8 + (inner_line as i32 * 2 % 16) + tile_loc) as u16);
             let tile_high = memory.get((tile_id * 2 * 8 + 1 + (inner_line as i32 * 2 % 16) + tile_loc) as u16);
-
-            if x == 0{
-            //println!("Tile is {} -> {:x?},{:x?}", tile_id, tile_low, tile_high);
-        //    println!("Locations are {}, {}", (tile_id * 2 * 8 + (inner_line as usize % 8) + tile_loc) as u16,
-        //(tile_id * 2 * 8 + 1 + (inner_line as usize % 8) + tile_loc) as u16);
-        }
 
             for xi in 0..8 {
                 let t_low = (tile_low >> (8-xi - 1)) & 0x1;
                 let t_high = (tile_high >> (8-xi - 1)) & 0x1;
-                if x == 0{
-                    //println!("{},{}", t_low, t_high);
-                }
-
                 let t_res = t_low + t_high * 2;
-                //println!("{:x?}", palet);
                 let palet_loc = (palet >> (t_res * 2)) % 0x04;
 
                 let mut col = match palet_loc {
@@ -242,23 +278,8 @@ impl GPU {
                     _ => panic!("Bad pallet value {}", palet_loc)
                 };
 
-                if tile_id != 0x20 {
-                    //col = 173;
-                }
-
                 self.lcd[line as usize][(x * 8 + xi) as usize] = col;
             }
-
-            if x == 0 {
-                //println!("Resolved to ");
-                for xi in 0..8{
-                //    println!("{}", self.lcd[line as usize][(x * 8 + xi) as usize]);
-                }
-            }
-        }
-
-        for sprite in 0..40 {
-            self.draw_line_sprite(memory, line, sprite, x_offset, inner_line);
         }
     }
 

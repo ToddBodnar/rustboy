@@ -24,13 +24,13 @@ impl Registers {
 
             a: 0x01,
             b: 0x00,
-            c: 0x13,
+            c: 0x14,
             d: 0x00,
-            e: 0xd8,
-            f: 0xb0,
+            e: 0x00,
+            f: 0x00,
 
-            h: 0x01,
-            l: 0x4d
+            h: 0xc0,
+            l: 0x60
         };
     }
 
