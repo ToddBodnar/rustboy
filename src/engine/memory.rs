@@ -7,6 +7,10 @@ pub trait Memory {
 
     fn get(&self, loc: u16) -> u8 ;
 
+    fn load(&mut self, data: Vec<u8>);
+
+    fn save(&self) -> Vec<u8> ;
+
     fn setInterruptFlag(&mut self, flag: u8) {
         let interrupts = self.get(0xFF0F);
         if (interrupts & (1 << (flag))) == 0 {
@@ -51,6 +55,7 @@ pub fn make_memory(rom: Vec::<u8>) -> Box<dyn Memory> {
         0x00 => Box::new(ROMOnlyMemory::make_memory(rom)),
         0x01 | 0x02 | 0x03 => Box::new(MBC1Memory::make_memory(rom)),
         0x13 => Box::new(MBC3Memory::make_memory(rom)),
+        0x1b => Box::new(MBC5Memory::make_memory(rom)),
         _ => panic!("Don't understand cartridge type {:x?}", rom[0x0147])
     };
 }
@@ -89,10 +94,15 @@ impl Memory for ROMOnlyMemory {
         }
         return self.rom[loc as usize];
     }
+
+    fn load(&mut self, ram: Vec<u8>) {
+        //nothing to load MBC1 doesn't support saving
+    }
+
+    fn save(&self) -> Vec<u8> {
+        return vec![];
+    }
 }
-
-
-
 
 #[derive(Debug)]
 pub struct MBC1Memory {
@@ -171,6 +181,27 @@ impl Memory for MBC1Memory {
         } else {
             return self.ram[loc as usize];
         }
+    }
+
+    fn load(&mut self, ram: Vec<u8>) {
+        //todo: test these
+        for bank in 0..16 {
+            for loc in 0..0x1000 {
+                self.ram_banks[bank][loc] = ram[bank * 0x1000 + loc];
+            }
+        }
+    }
+
+    fn save(&self) -> Vec<u8> {
+        //todo: test these
+        let mut res = vec![0; 0x1000 * 16];
+        for bank in 0..16 {
+            for loc in 0..0x1000 {
+                res[bank * 0x1000 + loc] = self.ram_banks[bank][loc];
+            }
+        }
+
+        return res;
     }
 }
 
@@ -256,5 +287,121 @@ impl Memory for MBC3Memory {
         } else {
             return self.ram[loc as usize];
         }
+    }
+
+    fn load(&mut self, ram: Vec<u8>) {
+        //todo: test these
+        for bank in 0..16 {
+            for loc in 0..0x1000 {
+                self.ram_banks[bank][loc] = ram[bank * 0x1000 + loc];
+            }
+        }
+    }
+
+    fn save(&self) -> Vec<u8> {
+        //todo: test these
+        let mut res = vec![0; 0x1000 * 16];
+        for bank in 0..16 {
+            for loc in 0..0x1000 {
+                res[bank * 0x1000 + loc] = self.ram_banks[bank][loc];
+            }
+        }
+
+        return res;
+    }
+}
+
+
+#[derive(Debug)]
+pub struct MBC5Memory {
+    rom: Vec<u8>,
+    ram: Vec<u8>,
+    rom_bank_n: u32,
+    rom_bank_hi: bool,
+    ram_bank_n: u32,
+    ram_banks: Vec<Vec<u8>>,
+    memory_model_is_4_32: bool,
+    ram_bank_ops_disabled: bool
+}
+
+impl MBC5Memory {
+    fn make_memory(rom: Vec<u8>) -> impl Memory {
+        println!("Making MBC5 Memory");
+        MBC5Memory {
+            ram:  vec![0; 0xFFFF + 1],
+            rom: rom,
+            rom_bank_n: 1,
+            rom_bank_hi: false,
+            ram_bank_n: 1,
+            ram_banks: vec![vec![0; 0x2000]; 16],
+            memory_model_is_4_32: false,
+            ram_bank_ops_disabled: false
+        }
+    }
+}
+
+impl Memory for MBC5Memory {
+    fn set(&mut self, loc: u16, val: u8) {
+        if loc < 0x8000 {
+            match loc {
+                0x0000..=0x1FFF => {
+                    self.ram_bank_ops_disabled = val == 10;
+                },
+                0x2000..=0x2FFF => {
+                    self.rom_bank_n = val as u32 + if self.rom_bank_hi {0b100000000} else {0};
+                },
+                0x3000..=0x3FFF => {
+                    self.rom_bank_hi = val % 2 == 1;
+                    self.rom_bank_n = (self.rom_bank_n & 0b11111111) + if self.rom_bank_hi {0b100000000} else {0};
+                },
+                0x4000..=0x5FFF => {
+                    self.ram_bank_n = (val & 0xFF) as u32;
+                },
+                _ => {
+                    println!("How did we get to {}", loc);
+                }
+            }
+        } else if loc >= 0xA000 && loc < 0xC000 {
+            self.ram_banks[self.ram_bank_n as usize][loc as usize - 0xA000] = val;
+        } else if loc >= 0xE000 && loc < 0xF000{
+            return self.set(loc - 0x2000, val);
+        } else {
+            self.ram[loc as usize] = val;
+        }
+    }
+
+    fn get(&self, loc: u16) -> u8 {
+        if loc < 0x4000 {
+            return self.rom[loc as usize];
+        } else if loc < 0x8000 {
+            let resolved_loc = (0x4000 * self.rom_bank_n + (loc as u32 - 0x4000)) as usize;
+
+            return self.rom[resolved_loc];
+        } else if loc >= 0xA000 && loc < 0xC000 {
+            return self.ram_banks[self.ram_bank_n as usize][loc as usize - 0xA000];
+        } else if loc >= 0xE000 && loc < 0xF000{
+            return self.get(loc - 0x2000);
+        } else {
+            return self.ram[loc as usize];
+        }
+    }
+
+    fn load(&mut self, ram: Vec<u8>) {
+        for bank in 0..16 {
+            for loc in 0..0x2000 {
+                self.ram_banks[bank][loc] = ram[bank * 0x2000 + loc];
+            }
+        }
+    }
+
+    fn save(&self) -> Vec<u8> {
+        let mut res = vec![0; 0x2000 * 16];
+        for bank in 0..16 {
+            for loc in 0..0x2000 {
+                res[bank * 0x2000 + loc] = self.ram_banks[bank][loc];
+            }
+        }
+
+        return res;
     }
 }

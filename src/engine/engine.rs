@@ -295,7 +295,7 @@ impl Engine {
             if ((interrupt_flags & self.memory.get(0xFFFF)) & 0x01) > 0 {
                 self.enable_interrupt = InterruptState::DISABLED;
                 let register_val = self.registers.pc;
-                println!("00 {}, {:x}", self.registers, interrupt_flags);
+                //println!("00 {}, {:x}", self.registers, interrupt_flags);
 
                 self.memory.push_stack(&mut self.registers, register_val);
                 self.registers.pc = 0x0040;
@@ -304,7 +304,7 @@ impl Engine {
             } else if ((interrupt_flags & self.memory.get(0xFFFF)) & 0x02) > 0 {
                 self.enable_interrupt = InterruptState::DISABLED;
                 let register_val = self.registers.pc;
-                println!("01 {}, {:x}", self.registers, interrupt_flags);
+                //println!("01 {}, {:x}", self.registers, interrupt_flags);
 
                 self.memory.push_stack(&mut self.registers, register_val);
                 self.registers.pc = 0x0048;
@@ -322,7 +322,7 @@ impl Engine {
             } else if ((interrupt_flags & self.memory.get(0xFFFF)) & 0x08) > 0 {
                 self.enable_interrupt = InterruptState::DISABLED;
                 let register_val = self.registers.pc;
-                println!("03 {}, {:x}", self.registers, interrupt_flags);
+                //println!("03 {}, {:x}", self.registers, interrupt_flags);
                 self.memory.push_stack(&mut self.registers, register_val);
                 self.registers.pc = 0x0058;
                 self.memory.set(0xFF0F, interrupt_flags - 0x08);
@@ -330,11 +330,11 @@ impl Engine {
             } else if ((interrupt_flags & self.memory.get(0xFFFF)) & 0x10) > 0 {
                 self.enable_interrupt = InterruptState::DISABLED;
                 let register_val = self.registers.pc;
-                println!("04 {}, {:x}", self.registers, interrupt_flags);
+                //println!("04 {}, {:x}", self.registers, interrupt_flags);
                 self.memory.push_stack(&mut self.registers, register_val);
                 self.registers.pc = 0x0060;
                 self.memory.set(0xFF0F, interrupt_flags - 0x10);
-                println!("Interrupted input with {:b}", self.memory.get(0xFF00));
+                //println!("Interrupted input with {:b}", self.memory.get(0xFF00));
                 return 12;
             }
         }

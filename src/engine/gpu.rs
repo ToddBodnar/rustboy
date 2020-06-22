@@ -198,7 +198,7 @@ impl GPU {
 
     fn draw_line(&mut self, memory: &mut Box<dyn Memory>, line: u8){
 
-        let inner_line = (line as i32 + self.get_y_offset(memory)) % 0x1000;
+        let inner_line = (line as i32 + self.get_y_offset(memory)) % 0xFF;
         let x_offset = self.get_x_offset(memory);
 
         let map_loc = match GPU::get_lcdc_tile_map(memory) {
@@ -225,15 +225,13 @@ impl GPU {
             };
 
             if line >= memory.get(0xFF4A) {
-                println!("Drawing window from {} to {} on line {}",  memory.get(0xFF4A) as i32 - 7, 160, line);
-                println!("Map is {:x}, tiles are {:x}", window_map_loc, window_tile_loc);
                 self.draw_line_tiles(memory, memory.get(0xFF4A) as i32 - 7, 160, line, window_tile_loc, 0, line as i32, window_map_loc);
             }
         }
 
 
         for sprite in 0..40 {
-            self.draw_line_sprite(memory, line, sprite, x_offset, inner_line);
+            self.draw_line_sprite(memory, line, sprite, 0, line as i32);
         }
     }
 
@@ -248,14 +246,10 @@ impl GPU {
                         map_loc: usize) {
         let palet = memory.get(0xFF47);
 
-        for x in cmp::max(start_x, 0)..(end_x / 8) {
-            let mut tile_id = memory.get(((x as i32 * 8 + x_offset) / 8 + (inner_line / 8 as i32 * 32)+ map_loc as i32) as u16) as i32;
+        for x in cmp::max(start_x, 0)..((end_x / 8)+1){
+            let mut tile_id = memory.get((((x as i32 * 8 + x_offset) & 0xFF) / 8 + (inner_line / 8 as i32 * 32) + map_loc as i32) as u16) as i32;
 
-
-            println!("{:x}, {:x}, {:x}", x, map_loc, tile_id);
-            println!("{:x}", ((x as i32 * 8 + x_offset) / 8 + (inner_line / 8 as i32 * 32)+ map_loc as i32) as u16);
-
-            if !GPU::get_lcdc_tile_data(memory) {
+                if !GPU::get_lcdc_tile_data(memory) {
                 if tile_id > 127 {
                     tile_id = tile_id - 256;
                 }
@@ -277,8 +271,16 @@ impl GPU {
                     0 => 255,
                     _ => panic!("Bad pallet value {}", palet_loc)
                 };
+                if x * 8 + xi < x_offset % 8 {
+                    continue;
+                }
+                let final_x = (x * 8 + xi - (x_offset % 8)) as usize;
 
-                self.lcd[line as usize][(x * 8 + xi) as usize] = col;
+                if final_x < 0 || final_x >=160 {
+                    continue;
+                }
+
+                self.lcd[line as usize][final_x] = col;
             }
         }
     }
@@ -286,29 +288,78 @@ impl GPU {
     fn draw_line_sprite(&mut self, memory: &mut Box<dyn Memory>, line: u8, sprite: u16, x:i32, y:i32) {
         let oam_loc = (0xFE00 + sprite * 4) as u16;
 
-        let sprite_y_coord = memory.get(oam_loc) as i32 - 16;
-
+        let sprite_y_coord = memory.get(oam_loc) as i32 - 16 + 8;
         let sprite_x_coord = memory.get(oam_loc + 1) as i32 - 8;
 
-        if sprite_y_coord < y || sprite_y_coord > y + 8 {
-            //println!("skip!");
+        if sprite_y_coord < y || sprite_y_coord >= y + 8 {
+            //not at a line to draw this
             return;
         }
+
+        if sprite_y_coord == -8 && sprite_x_coord == -8 {
+            //disabled
+            return;
+        }
+
+        let pattern = memory.get(oam_loc + 2);
+        let flags = memory.get(oam_loc + 3);
+
+        let priority = flags & 0b10000000 == 0;
+        let flip_y = (flags & 0b01000000) > 0;
+        let flip_x = (flags & 0b00100000) > 0;
+        let pallet_num = (flags & 0b00010000) > 0;
 
         //println!("{} -> {},{}", sprite, sprite_x_coord, sprite_y_coord);
         //println!("{},{}", x,y);
 
-        for i in 0..8 {
-            let target = ((sprite_x_coord + i - x) as usize);
+        let mut tile_id = pattern as u16; // memory.get((((x as i32 * 8 + x_offset) & 0xFF) / 8 + (inner_line / 8 as i32 * 32) + map_loc as i32) as u16) as i32;
+
+        let mut sprite_line = 7 - (sprite_y_coord - line as i32) as u16;
+
+        if flip_y {
+            sprite_line = 7 - sprite_line;
+        }
+
+        let tile_low = memory.get((tile_id * 8 * 2 + sprite_line * 2 + 0x8000) as u16);
+        let tile_high = memory.get((tile_id * 8 * 2 + sprite_line * 2 + 1 + 0x8000) as u16);
+
+        let palet = if !pallet_num {memory.get(0xFF48)} else {memory.get(0xFF49)};
+        for xi in 0..8 {
+            let target = ((sprite_x_coord + if flip_x {7 - xi} else {xi}) as usize);
             if target < 0 || target >= 160 {
                 continue;
             }
-            self.lcd[line as usize][target] = 25 * i as u8;
+
+            println!("{}, {}", priority, self.lcd[line as usize][target]);
+            if !priority && self.lcd[line as usize][target] != 255 {
+                continue;
+            }
+
+            let true_xi = 8-xi - 1;
+
+            let t_low = (tile_low >> (true_xi)) & 0x1;
+            let t_high = (tile_high >> (true_xi)) & 0x1;
+            let t_res = t_low + t_high * 2;
+            let palet_loc = (palet >> (t_res * 2)) % 0x04;
+
+            if t_res == 0 {
+                continue;
+            }
+
+            let mut col = match palet_loc {
+                3 => 0,
+                2 => 82,
+                1 => 173,
+                0 => 255,
+                _ => panic!("Bad pallet value {}", palet_loc)
+            };
+
+            self.lcd[line as usize][target] = col;
         }
     }
 
     fn get_y_offset(&mut self, memory: &mut Box<dyn Memory>) -> i32 {
-        memory.get(0xFF42) as i32 & 0xFF * 0
+        memory.get(0xFF42) as i32 & 0xFF
     }
     fn get_x_offset(&mut self, memory: &mut Box<dyn Memory>) -> i32 {
         memory.get(0xFF43) as i32 & 0xFF
@@ -317,7 +368,7 @@ impl GPU {
 
 #[derive(Debug)]
 #[derive(PartialEq)]
-pub enum GpuState{
+pub enum GpuState {
    SCAN_OAM,
    SCAN_VRAM,
    H_BLANK,

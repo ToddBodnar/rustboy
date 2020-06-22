@@ -2,6 +2,7 @@ use std::env;
 use std::io;
 use std::io::prelude::*;
 use std::fs::File;
+use std::path::Path;
 
 extern crate sdl2;
 
@@ -19,11 +20,23 @@ fn main() {
 
     let mut rom = Vec::<u8>::new();
 
-    let mut rom_file_ptr = File::open(rom_file).expect("Bad file name!");
+    let mut rom_file_ptr = File::open(&rom_file).expect("Bad file name!");
 
     rom_file_ptr.read_to_end(&mut rom).expect("Couldn't read file");
 
     let mut eng = engine::make_engine(rom);
+
+    let save_file_name = rom_file + ".sav";
+    if Path::new(&save_file_name).exists() {
+        println!("Loading save from {}", save_file_name);
+        let mut sav_ram = Vec::<u8>::new();
+
+        let mut sav_ram_file_ptr = File::open(&save_file_name).expect("Bad save file name!");
+
+        sav_ram_file_ptr.read_to_end(&mut sav_ram).expect("Couldn't read save file");
+        eng.memory.load(sav_ram);
+    }
+
     eng.run(false);
 
     print!("\nLCD Control\n{:#010b}", eng.memory.get(0xFF40));
@@ -73,4 +86,15 @@ fn main() {
     println!("{:?}", eng.enable_interrupt);
 
     println!("\nKeys\n{:#010b}", eng.memory.get(0xFF00));
+
+    let to_save = eng.memory.save();
+
+    if (to_save.len() == 0){
+        println!("Nothing to save");
+    }else {
+        println!("Saving state");
+        let mut out_file = File::create(save_file_name).expect("Couldn't save!");
+        out_file.write_all(&to_save).expect("Write failed");
+        println!("Done");
+    }
 }
