@@ -184,7 +184,6 @@ impl Memory for MBC1Memory {
     }
 
     fn load(&mut self, ram: Vec<u8>) {
-        //todo: test these
         for bank in 0..16 {
             for loc in 0..0x1000 {
                 self.ram_banks[bank][loc] = ram[bank * 0x1000 + loc];
@@ -193,7 +192,6 @@ impl Memory for MBC1Memory {
     }
 
     fn save(&self) -> Vec<u8> {
-        //todo: test these
         let mut res = vec![0; 0x1000 * 16];
         for bank in 0..16 {
             for loc in 0..0x1000 {
@@ -290,7 +288,7 @@ impl Memory for MBC3Memory {
     }
 
     fn load(&mut self, ram: Vec<u8>) {
-        //todo: test these
+        
         for bank in 0..16 {
             for loc in 0..0x1000 {
                 self.ram_banks[bank][loc] = ram[bank * 0x1000 + loc];
@@ -299,7 +297,6 @@ impl Memory for MBC3Memory {
     }
 
     fn save(&self) -> Vec<u8> {
-        //todo: test these
         let mut res = vec![0; 0x1000 * 16];
         for bank in 0..16 {
             for loc in 0..0x1000 {

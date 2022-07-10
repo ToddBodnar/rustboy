@@ -171,12 +171,14 @@ impl Engine {
                 break 'running
             }
 
-            total_steps += 1; self.run_limited(1);
+            total_steps += 1; 
+            
+            self.run_limited(1);
 
             self.gpu.draw(&mut canvas, width, height);
 
             //self.memory.set(0xFF00, 0x7E);
-
+/*
             if total_steps == 44 {
 
                     self.memory.set(0xFF44, 0x01);
@@ -245,7 +247,7 @@ impl Engine {
 
             if total_steps > 1785420 && false{
                 break 'running
-            }
+            }*/
         }
     }
 
@@ -1892,7 +1894,6 @@ mod tests {
 
     #[test]
     fn test_jump_and_return(){
-        //todo:
         // idea is to start at some point, jump, do some simple math, then execute a return nz, then loop at that point until the end,
         // then we check if we actually jumped to the right places
 

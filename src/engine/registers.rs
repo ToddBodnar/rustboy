@@ -2,7 +2,7 @@ use std::fmt;
 
 #[derive(Debug)]
 pub struct Registers {
-    pub pc: u16, //todo: how to initilaze this without it being public
+    pub pc: u16, 
     pub sp: u16,
 
     pub a: u8,
@@ -18,7 +18,7 @@ pub struct Registers {
 
 impl Registers {
     pub fn make_registers() -> Registers {
-        return Registers { //todo: understanding of these default values
+        return Registers { 
             pc: 0x100,
             sp: 0xFFFE,
 
@@ -52,7 +52,7 @@ impl Registers {
             res += 16;
         }
 
-        return res as u16; //todo
+        return res as u16; 
     }
 
     pub fn incr_pc(& mut self, amount: i32){

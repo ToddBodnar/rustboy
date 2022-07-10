@@ -112,8 +112,6 @@ impl GPU {
                 if self.time >= 172.0 {
                     self.time -= 172.0;
                     self.mode = GpuState::H_BLANK;
-                    //self.set_lcdc_y(memory, self.line);
-                    //todo: draw
                 }
             }
         };
