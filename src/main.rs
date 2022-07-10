@@ -1,7 +1,7 @@
 use std::env;
 use std::io;
 use std::io::prelude::*;
-use std::fs::File;
+use std::fs;
 use std::path::Path;
 
 extern crate sdl2;
@@ -15,12 +15,14 @@ mod engine;
 
 fn main() {
     let rom_file = env::args().nth(1).expect("Need rom file!");
+    
+    let demo_mode = env::args().nth(2) == Some(String::from("TEST"));
 
     println!("Using file {}", rom_file);
 
     let mut rom = Vec::<u8>::new();
 
-    let mut rom_file_ptr = File::open(&rom_file).expect("Bad file name!");
+    let mut rom_file_ptr = fs::File::open(&rom_file).expect("Bad file name!");
 
     rom_file_ptr.read_to_end(&mut rom).expect("Couldn't read file");
 
@@ -31,13 +33,24 @@ fn main() {
         println!("Loading save from {}", save_file_name);
         let mut sav_ram = Vec::<u8>::new();
 
-        let mut sav_ram_file_ptr = File::open(&save_file_name).expect("Bad save file name!");
+        let mut sav_ram_file_ptr = fs::File::open(&save_file_name).expect("Bad save file name!");
 
         sav_ram_file_ptr.read_to_end(&mut sav_ram).expect("Couldn't read save file");
         eng.memory.load(sav_ram);
     }
 
-    eng.run(false);
+    if demo_mode {
+        println!("Running headless demo mode");
+        fs::create_dir_all("screenshots/");
+        
+        for i in 0..50{
+            eng.run_limited(1000000);
+            //println!("{} of 50 done", i);
+            eng.screenshot(Path::new("screenshots/screenshot.bmp"));
+        }
+    } else {
+        eng.run(false);
+    }
 
     print!("\nLCD Control\n{:#010b}", eng.memory.get(0xFF40));
 
@@ -93,7 +106,7 @@ fn main() {
         println!("Nothing to save");
     } else {
         println!("Saving state");
-        let mut out_file = File::create(save_file_name).expect("Couldn't save!");
+        let mut out_file = fs::File::create(save_file_name).expect("Couldn't save!");
         out_file.write_all(&to_save).expect("Write failed");
         println!("Done");
     }
