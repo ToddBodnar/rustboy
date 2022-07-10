@@ -7,8 +7,9 @@ use crate::engine::registers::Registers;
 use crate::engine::registers::RegisterNames;
 use crate::engine::memory::Memory;
 
-
 extern crate sdl2;
+
+use chrono;
 
 use sdl2::pixels::{Color, PixelFormatEnum};
 use sdl2::event::Event;
@@ -141,6 +142,9 @@ impl Engine {
                         Event::KeyDown { keycode: Some(Keycode::Right), .. } => {
                             self.buttons.setKeyDown(KeyNames::RIGHT, &mut self.memory);
                         },
+                        Event::KeyDown { keycode: Some(Keycode::Space), .. } => {
+                            self.screenshot(Path::new(format!("screenshots/screenshot{}.bmp", chrono::offset::Local::now()).as_str()));
+                        },
                         Event::KeyUp { keycode: Some(Keycode::F), .. } => {
                             self.buttons.setKeyUp(KeyNames::A, &mut self.memory);
                         },
@@ -186,6 +190,7 @@ impl Engine {
         let surface = Surface::new(160, 144, PixelFormatEnum::RGB24).unwrap();
         let mut canvas = surface.into_canvas()
             .expect("failed to build window's canvas");
+        self.gpu.time_to_draw = true;
         self.gpu.draw(&mut canvas, 160, 144);
         return canvas.into_surface().save_bmp(path);
     }
