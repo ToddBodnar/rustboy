@@ -57,7 +57,7 @@ pub trait Memory {
 }
 
 pub fn make_memory(rom: Vec::<u8>) -> Box<dyn Memory> {
-    return match(rom[0x0147]) {
+    return match rom[0x0147] {
         0x00 => Box::new(ROMOnlyMemory::make_memory(rom)),
         0x01 | 0x02 | 0x03 => Box::new(MBC1Memory::make_memory(rom)),
         0x13 => Box::new(MBC3Memory::make_memory(rom)),

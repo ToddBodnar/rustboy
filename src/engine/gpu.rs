@@ -19,7 +19,7 @@ impl GPU {
         return GPU {
             time: 0.0,
             line: 0,
-            mode: GpuState::H_BLANK,
+            mode: GpuState::HBlank,
             lcd: vec![vec![0; 160]; 144],
             time_to_draw: true
         };
@@ -38,7 +38,7 @@ impl GPU {
 
         let mut scale = 1.0 as f64;
 
-        if (160.0 / 144.0 < (width as f64 / height as f64)) {
+        if 160.0 / 144.0 < (width as f64 / height as f64) {
             scale = height as f64 / (144 as f64);
         }else{
             scale = width as f64 / (160 as f64);
@@ -68,7 +68,7 @@ impl GPU {
         //println!("Gpu time is {} ({:?})", self.time, self.mode);
         //timing based on http://imrannazar.com/GameBoy-Emulation-in-JavaScript:-GPU-Timings, not sure of
         match self.mode {
-            GpuState::H_BLANK => {
+            GpuState::HBlank => {
                 if self.time >= 204.0 {
                     self.time -= 204.0;
                     self.line += 1;
@@ -76,16 +76,16 @@ impl GPU {
                     self.update_stat(memory);
 
                     if self.line == 143 {
-                        self.mode = GpuState::V_BLANK;
+                        self.mode = GpuState::VBlank;
                         self.line = 0;
                         self.time_to_draw = true;
                     } else {
-                        self.mode = GpuState::SCAN_OAM;
+                        self.mode = GpuState::ScanOAM;
                         self.draw_line(memory, self.line);
                     }
                 }
             },
-            GpuState::V_BLANK => {
+            GpuState::VBlank => {
                 if self.time >= 456.0 + 23.2{
                     self.time -= 456.0 + 23.2;
                     self.line += 1;
@@ -97,21 +97,21 @@ impl GPU {
                         self.line = 0;
 
                         //self.set_lcdc_y(memory, 0);
-                        self.mode = GpuState::SCAN_OAM;
+                        self.mode = GpuState::ScanOAM;
                     }
                 }
             },
-            GpuState::SCAN_OAM => {
+            GpuState::ScanOAM => {
                 if self.time >= 80.0 {
                     self.time -= 80.0;
-                    self.mode = GpuState::SCAN_VRAM;
+                    self.mode = GpuState::ScanVRAM;
                     self.update_stat(memory);
                 }
             },
-            GpuState::SCAN_VRAM => {
+            GpuState::ScanVRAM => {
                 if self.time >= 172.0 {
                     self.time -= 172.0;
-                    self.mode = GpuState::H_BLANK;
+                    self.mode = GpuState::HBlank;
                 }
             }
         };
@@ -170,10 +170,10 @@ impl GPU {
         }
 
         match self.mode {
-            GpuState::SCAN_OAM => val += 1 << 5,
-            GpuState::V_BLANK => val += 1 << 4,
-            GpuState::H_BLANK => val += 1 << 3,
-            GpuState::SCAN_VRAM => {}
+            GpuState::ScanOAM => val += 1 << 5,
+            GpuState::VBlank => val += 1 << 4,
+            GpuState::HBlank => val += 1 << 3,
+            GpuState::ScanVRAM => {}
         };
 
         if memory.get(0xFF44) == self.line {
@@ -181,15 +181,15 @@ impl GPU {
         }
 
         match self.mode {
-            GpuState::SCAN_OAM => val += 2,
-            GpuState::V_BLANK => val += 1,
-            GpuState::H_BLANK => val += 0,
-            GpuState::SCAN_VRAM => val += 3
+            GpuState::ScanOAM => val += 2,
+            GpuState::VBlank => val += 1,
+            GpuState::HBlank => val += 0,
+            GpuState::ScanVRAM => val += 3
         };
 
         memory.set(0xFF41, val);
 
-        if self.mode == GpuState::V_BLANK {
+        if self.mode == GpuState::VBlank {
             memory.setInterruptFlag(0);
         }
     }
@@ -323,7 +323,7 @@ impl GPU {
 
         let palet = if !pallet_num {memory.get(0xFF48)} else {memory.get(0xFF49)};
         for xi in 0..8 {
-            let target = ((sprite_x_coord + if flip_x {7 - xi} else {xi}) as usize);
+            let target = (sprite_x_coord + if flip_x {7 - xi} else {xi}) as usize;
             if target < 0 || target >= 160 {
                 continue;
             }
@@ -367,8 +367,8 @@ impl GPU {
 #[derive(Debug)]
 #[derive(PartialEq)]
 pub enum GpuState {
-   SCAN_OAM,
-   SCAN_VRAM,
-   H_BLANK,
-   V_BLANK
+   ScanOAM,
+   ScanVRAM,
+   HBlank,
+   VBlank
 }

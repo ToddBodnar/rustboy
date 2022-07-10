@@ -166,7 +166,7 @@ impl Engine {
                     }
                 }
             }
-            if(headless){
+            if headless {
                 self.run_limited(100);
                 break 'running
             }
@@ -176,78 +176,6 @@ impl Engine {
             self.run_limited(1);
 
             self.gpu.draw(&mut canvas, width, height);
-
-            //self.memory.set(0xFF00, 0x7E);
-/*
-            if total_steps == 44 {
-
-                    self.memory.set(0xFF44, 0x01);
-                    self.gpu.line = 0x01;
-                    self.gpu.time = 230.0;
-                    self.gpu.mode = GpuState::H_BLANK;
-            }
-
-            if total_steps == 6113 {
-
-                    self.memory.set(0xFF44, 0x8F);
-                    //self.gpu.line = 0x8F;
-                    self.gpu.time = 0.0;
-                    //self.gpu.mode = GpuState::V_BLANK;
-            }
-
-            if total_steps == 6155 {
-
-                    self.memory.set(0xFF44, 0x90);
-                    //self.gpu.line = 0x8F;
-                    self.gpu.time = 0.0;
-                    //self.gpu.mode = GpuState::V_BLANK;
-            }
-
-            if total_steps == 6200 {
-
-                    self.memory.set(0xFF44, 0x91);
-                    //self.gpu.line = 0x8F;
-                    self.gpu.time = 0.0;
-                    //self.gpu.mode = GpuState::V_BLANK;
-            }
-
-            if total_steps == 15825 {
-                self.memory.set(0xFF44, 0x90);
-            }
-
-            if total_steps == 15870 {
-                self.memory.set(0xFF44, 0x91);
-            }
-
-            if total_steps == 15912 {
-                self.memory.set(0xFF44, 0x92);
-            }
-
-            if total_steps == 15954 {
-                self.memory.set(0xFF44, 0x93);
-            }
-
-            if total_steps == 15996 {
-                self.memory.set(0xFF44, 0x94);
-            }
-
-            if total_steps == 104241 - 1 {
-                self.memory.set(0xFF44, 0x01);
-                self.gpu.line = 0x02;
-                self.gpu.time = 136.0;
-                self.gpu.mode = GpuState::H_BLANK;
-            }
-
-            if total_steps == 104334 - 1 {
-                self.memory.set(0xFF44, 0x03);
-                self.gpu.line = 0x04;
-                self.gpu.time = 200.0;
-                self.gpu.mode = GpuState::H_BLANK;
-            }
-
-            if total_steps > 1785420 && false{
-                break 'running
-            }*/
         }
     }
 
@@ -287,15 +215,15 @@ impl Engine {
         self.check_dma_transfer();
 
         let interrupt_flags = self.memory.get(0xFF0F);
-        if self.enable_interrupt == InterruptState::HALT_NO_INTERRUPT {
+        if self.enable_interrupt == InterruptState::HaltNoInterrupt {
 
             if (interrupt_flags & self.memory.get(0xFFFF)) > 0 {
-                self.enable_interrupt = InterruptState::DISABLED;
+                self.enable_interrupt = InterruptState::Disabled;
                 return 4 + 16; //how long should this take?
             }
-        } else if self.enable_interrupt == InterruptState::ENABLED || self.enable_interrupt == InterruptState::HALT {
+        } else if self.enable_interrupt == InterruptState::Enabled || self.enable_interrupt == InterruptState::Halt {
             if ((interrupt_flags & self.memory.get(0xFFFF)) & 0x01) > 0 {
-                self.enable_interrupt = InterruptState::DISABLED;
+                self.enable_interrupt = InterruptState::Disabled;
                 let register_val = self.registers.pc;
                 //println!("00 {}, {:x}", self.registers, interrupt_flags);
 
@@ -304,7 +232,7 @@ impl Engine {
                 self.memory.set(0xFF0F, interrupt_flags - 0x01);
                 return 12;
             } else if ((interrupt_flags & self.memory.get(0xFFFF)) & 0x02) > 0 {
-                self.enable_interrupt = InterruptState::DISABLED;
+                self.enable_interrupt = InterruptState::Disabled;
                 let register_val = self.registers.pc;
                 //println!("01 {}, {:x}", self.registers, interrupt_flags);
 
@@ -313,7 +241,7 @@ impl Engine {
                 self.memory.set(0xFF0F, interrupt_flags - 0x02);
                 return 12;
             } else if ((interrupt_flags & self.memory.get(0xFFFF)) & 0x04) > 0 {
-                self.enable_interrupt = InterruptState::DISABLED;
+                self.enable_interrupt = InterruptState::Disabled;
                 let register_val = self.registers.pc;
                 //println!("02 {}, {:x}", self.registers, interrupt_flags);
 
@@ -322,7 +250,7 @@ impl Engine {
                 self.memory.set(0xFF0F, interrupt_flags - 0x04);
                 return 12;
             } else if ((interrupt_flags & self.memory.get(0xFFFF)) & 0x08) > 0 {
-                self.enable_interrupt = InterruptState::DISABLED;
+                self.enable_interrupt = InterruptState::Disabled;
                 let register_val = self.registers.pc;
                 //println!("03 {}, {:x}", self.registers, interrupt_flags);
                 self.memory.push_stack(&mut self.registers, register_val);
@@ -330,7 +258,7 @@ impl Engine {
                 self.memory.set(0xFF0F, interrupt_flags - 0x08);
                 return 12;
             } else if ((interrupt_flags & self.memory.get(0xFFFF)) & 0x10) > 0 {
-                self.enable_interrupt = InterruptState::DISABLED;
+                self.enable_interrupt = InterruptState::Disabled;
                 let register_val = self.registers.pc;
                 //println!("04 {}, {:x}", self.registers, interrupt_flags);
                 self.memory.push_stack(&mut self.registers, register_val);
@@ -342,12 +270,12 @@ impl Engine {
         }
 
 
-        if self.enable_interrupt == InterruptState::HALT || self.enable_interrupt == InterruptState::HALT_NO_INTERRUPT {
+        if self.enable_interrupt == InterruptState::Halt || self.enable_interrupt == InterruptState::HaltNoInterrupt {
             return 4; // sleep until an interrupt happens
         }
 
-        if self.enable_interrupt == InterruptState::ENABLED_NEXT_OP{
-            self.enable_interrupt = InterruptState::ENABLED;
+        if self.enable_interrupt == InterruptState::EnabledNextOp{
+            self.enable_interrupt = InterruptState::Enabled;
             //panic!("enable");
         }
 
@@ -470,7 +398,7 @@ impl Engine {
             }
 
             0x02 | 0x12 | 0x22 | 0x32 | 0x0A | 0x1A | 0x2A | 0x3A => {
-                let memory_loc = match (first_byte & 0xF0) {
+                let memory_loc = match first_byte & 0xF0 {
                     0x00 => self.registers.get_register(&RegisterNames::BC),
                     0x10 => self.registers.get_register(&RegisterNames::DE),
                     0x20 | 0x30 => self.registers.get_register(&RegisterNames::HL),
@@ -485,7 +413,7 @@ impl Engine {
                     self.registers.set_register(&RegisterNames::A, memory_val as u16);
                 }
 
-                 match (first_byte) {
+                 match first_byte {
                      0x22 | 0x2A => self.registers.change_register(RegisterNames::HL, 1),
                      0x32 | 0x3A => self.registers.change_register(RegisterNames::HL, -1),
                      _ => {}
@@ -641,13 +569,13 @@ impl Engine {
             0x40..=0x7F => {
                 if first_byte == 0x76 {
                     self.registers.incr_pc(1);
-                    if self.enable_interrupt == InterruptState::DISABLED {
-                        self.enable_interrupt = InterruptState::HALT_NO_INTERRUPT;
+                    if self.enable_interrupt == InterruptState::Disabled {
+                        self.enable_interrupt = InterruptState::HaltNoInterrupt;
                         //println!("{}", self.registers);
                         //self.registers.incr_pc(1);
-                        //panic!("weird halt");
+                        //panic!("weird Halt");
                     } else {
-                        self.enable_interrupt = InterruptState::HALT;
+                        self.enable_interrupt = InterruptState::Halt;
                     }
                     //panic!("{:x?}", self.memory.get(0xFFFF));
                     return 4;
@@ -823,7 +751,7 @@ impl Engine {
                 };
 
                 if first_byte == 0xD9 {
-                    self.enable_interrupt = InterruptState::ENABLED;
+                    self.enable_interrupt = InterruptState::Enabled;
                 }
 
                 self.registers.incr_pc(1);
@@ -1014,12 +942,12 @@ impl Engine {
 
             //interrupts
             0xF3 => {
-                self.enable_interrupt = InterruptState::DISABLED;
+                self.enable_interrupt = InterruptState::Disabled;
                 self.registers.incr_pc(1);
                 return 4;
             },
             0xFB => {
-                self.enable_interrupt = InterruptState::ENABLED_NEXT_OP;
+                self.enable_interrupt = InterruptState::EnabledNextOp;
                 self.registers.incr_pc(1);
                 return 4;
             },
@@ -1205,7 +1133,7 @@ impl Engine {
                 }
             },
             0x38..=0x3F => {
-                res = (initial_val >> 1);
+                res = initial_val >> 1;
 
                 self.registers.set_flags( res == 0, false, false, initial_val & 1 == 1);
 
@@ -1220,7 +1148,7 @@ impl Engine {
             },
 
             0x40..=0x7F => {
-                let bit = ((first_byte - 0x40) / 8);
+                let bit = (first_byte - 0x40) / 8;
 
                 let val = (initial_val & (1 << bit)) > 0;
 
@@ -1374,7 +1302,7 @@ impl Engine {
                                         false,
                                         // see https://robdor.com/2016/08/10/gameboy-emulator-half-carry-flag/
                                         ((initial_a & 0xFFF) + (other_value & 0xFFF)) & 0x1000 == 0x1000,
-                                        (t_result) > 0xFFFF
+                                        t_result > 0xFFFF
                         );
                     }
                     result = (t_result % 0x10000) as u16;
@@ -1383,7 +1311,7 @@ impl Engine {
                                     false,
                                     // see https://robdor.com/2016/08/10/gameboy-emulator-half-carry-flag/
                                     ((initial_a & 0xF) + (other_value & 0xF)) & 0x10 == 0x10,
-                                    (t_result) > 0xFF
+                                    t_result > 0xFF
                     );
                     result = (t_result % 0x100) as u16;
                 }
@@ -1404,14 +1332,14 @@ impl Engine {
                                     false,
                                     // see https://robdor.com/2016/08/10/gameboy-emulator-half-carry-flag/
                                     ((initial_a & 0xFFF) + (other_value & 0xFFF) + other_val_mut) & 0x1000 == 0x1000,
-                                    (result) > 0xFFFF
+                                    result > 0xFFFF
                     );
                 } else {
                     self.registers.set_flags(result as u8 == 0,
                                     false,
                                     // see https://robdor.com/2016/08/10/gameboy-emulator-half-carry-flag/
                                     ((initial_a & 0xF) + (other_value & 0xF) + other_val_mut) & 0x10 == 0x10,
-                                    (result) > 0xFF
+                                    result > 0xFF
                     );
                 }
             },
@@ -1423,14 +1351,14 @@ impl Engine {
                         self.registers.set_flags(result & 0xFF00 == 0,
                                         true,
                                         // see https://robdor.com/2016/08/10/gameboy-emulator-half-carry-flag/
-                                        ((initial_a & 0xFFF) < (result & 0xFFF)),
+                                        (initial_a & 0xFFF) < (result & 0xFFF),
                                         false
                         );
                     } else {
                         self.registers.set_flags(result == 0,
                                         true,
                                         // see https://robdor.com/2016/08/10/gameboy-emulator-half-carry-flag/
-                                        ((initial_a & 0xF) < (result & 0xF)),
+                                        (initial_a & 0xF) < (result & 0xF),
                                         false
                         );
                     }
@@ -1440,7 +1368,7 @@ impl Engine {
                         self.registers.set_flags(result & 0xFF00 == 0,
                                         true,
                                         // see https://robdor.com/2016/08/10/gameboy-emulator-half-carry-flag/
-                                        ((initial_a & 0xFFF) < (result & 0xFFF)),
+                                        (initial_a & 0xFFF) < (result & 0xFFF),
                                         true
                         );
                     } else {
@@ -1449,7 +1377,7 @@ impl Engine {
                         self.registers.set_flags(result == 0,
                                         true,
                                         // see https://robdor.com/2016/08/10/gameboy-emulator-half-carry-flag/
-                                        ((initial_a & 0xF) < (result & 0xF)),
+                                        (initial_a & 0xF) < (result & 0xF),
                                         true
                         );
                     }
@@ -1465,7 +1393,7 @@ impl Engine {
                         self.registers.set_flags(result & 0xFF00 == 0,
                                         true,
                                         // see https://robdor.com/2016/08/10/gameboy-emulator-half-carry-flag/
-                                        ((initial_a & 0xFFF) < (other_value & 0xFFF) + cary_amt),
+                                        (initial_a & 0xFFF) < (other_value & 0xFFF) + cary_amt,
                                         false
                         );
                     } else {
@@ -1482,7 +1410,7 @@ impl Engine {
                         self.registers.set_flags(result & 0xFF00 == 0,
                                         true,
                                         // see https://robdor.com/2016/08/10/gameboy-emulator-half-carry-flag/
-                                        ((initial_a & 0xFFF) < (other_value & 0xFFF) + cary_amt),
+                                        (initial_a & 0xFFF) < (other_value & 0xFFF) + cary_amt,
                                         true
                         );
                     } else {
@@ -1538,7 +1466,7 @@ impl Engine {
 
                 self.registers.set_flags(initial_a == other_value,
                                 true,
-                                ((initial_a & 0xF) < (inner_result & 0xF)),
+                                (initial_a & 0xF) < (inner_result & 0xF),
                                 initial_a < other_value
                 );
             }
@@ -1549,7 +1477,7 @@ impl Engine {
 
             MathNames::RRC => {
                 result = initial_a >> 1;
-                result += (self.registers.get_register(&RegisterNames::F) / 0x10 % 2 * 0x80);
+                result += self.registers.get_register(&RegisterNames::F) / 0x10 % 2 * 0x80;
 
                 self.registers.set_flags((result & 0xFF) == 0, false, false, initial_a % 2 == 1);
             }
@@ -1625,7 +1553,7 @@ pub enum KeyNames {
 #[derive(Debug)]
 #[derive(PartialEq)]
 pub enum InterruptState {
-    ENABLED, DISABLED, ENABLED_NEXT_OP, HALT, HALT_NO_INTERRUPT
+    Enabled, Disabled, EnabledNextOp, Halt, HaltNoInterrupt
 }
 
 #[cfg(test)]
@@ -1649,7 +1577,7 @@ mod tests {
         let mut eng = Engine{
             memory: memory::make_memory(vec![0; 0xFFFF]),
             registers: reg,
-            enable_interrupt: InterruptState::DISABLED,
+            enable_interrupt: InterruptState::Disabled,
             gpu: GPU::make_gpu(),
             clock: Clock::make_clock(),
             buttons: ButtonState::create()
@@ -1684,7 +1612,7 @@ mod tests {
         let mut eng = Engine{
             memory: memory::make_memory(vec![0; 0xFFFF]),
             registers: reg,
-            enable_interrupt: InterruptState::DISABLED,
+            enable_interrupt: InterruptState::Disabled,
             gpu: GPU::make_gpu(),
             clock: Clock::make_clock(),
             buttons: ButtonState::create()
@@ -1828,7 +1756,7 @@ mod tests {
         let mut eng = Engine{
             memory: memory::make_memory(vec![0; 0xFFFF]),
             registers: reg,
-            enable_interrupt: InterruptState::DISABLED,
+            enable_interrupt: InterruptState::Disabled,
             gpu: GPU::make_gpu(),
             clock: Clock::make_clock(),
             buttons: ButtonState::create()
@@ -1863,7 +1791,7 @@ mod tests {
         let mut eng = Engine{
             memory: memory::make_memory(vec![0; 0xFFFF]),
             registers: reg,
-            enable_interrupt: InterruptState::DISABLED,
+            enable_interrupt: InterruptState::Disabled,
             gpu: GPU::make_gpu(),
             clock: Clock::make_clock(),
             buttons: ButtonState::create()

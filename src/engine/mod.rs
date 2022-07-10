@@ -29,7 +29,7 @@ pub fn make_engine(rom: Vec::<u8>) -> engine::Engine {
     return engine::Engine{
         memory: memory,
         registers: registers::Registers::make_registers(),
-        enable_interrupt: engine::InterruptState::DISABLED,
+        enable_interrupt: engine::InterruptState::Disabled,
         gpu: gpu,
         clock: clock::Clock::make_clock(),
         buttons: engine::ButtonState::create()

@@ -89,9 +89,9 @@ fn main() {
 
     let to_save = eng.memory.save();
 
-    if (to_save.len() == 0){
+    if to_save.len() == 0 {
         println!("Nothing to save");
-    }else {
+    } else {
         println!("Saving state");
         let mut out_file = File::create(save_file_name).expect("Couldn't save!");
         out_file.write_all(&to_save).expect("Write failed");
