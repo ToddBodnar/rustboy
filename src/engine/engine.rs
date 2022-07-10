@@ -10,9 +10,12 @@ use crate::engine::memory::Memory;
 
 extern crate sdl2;
 
-use sdl2::pixels::Color;
+use sdl2::pixels::{Color, PixelFormatEnum};
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
+use sdl2::surface::Surface;
+
+use std::path::Path;
 use std::time::Duration;
 
 pub struct ButtonState {
@@ -178,8 +181,16 @@ impl Engine {
             self.gpu.draw(&mut canvas, width, height);
         }
     }
+    
+    pub fn screenshot(&mut self, path: & Path) -> Result<(), String> {
+        let surface = Surface::new(160, 144, PixelFormatEnum::RGB24).unwrap();
+        let mut canvas = surface.into_canvas()
+            .expect("failed to build window's canvas");
+        self.gpu.draw(&mut canvas, 160, 144);
+        return canvas.into_surface().save_bmp(path);
+    }
 
-    fn run_limited(&mut self, itrs: u64) -> u64{
+    pub fn run_limited(&mut self, itrs: u64) -> u64{
         let mut total_steps = 0 as u64;
         for i in 0..itrs {
             let wait_time = self.execute_next_instruction();
