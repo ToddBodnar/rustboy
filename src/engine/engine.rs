@@ -93,10 +93,10 @@ impl Engine {
         let sdl_context = sdl2::init().unwrap();
         let video_subsystem = sdl_context.video().unwrap();
         let width = 800;
-        let height = 600;
+        let height = 720;
         let window = match headless {
-            false => video_subsystem.window("Rust Boy", 800, 600).build().unwrap(),
-            true => video_subsystem.window("Rust Boy", 800, 600).hidden().build().unwrap()
+            false => video_subsystem.window("Rust Boy", width, height).build().unwrap(),
+            true => video_subsystem.window("Rust Boy", width, height).hidden().build().unwrap()
         };
 
         let mut canvas = window.into_canvas().build().unwrap();
