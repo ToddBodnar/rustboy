@@ -1,19 +1,17 @@
 # Rust Boy, a Game Boy emulator in Rust
 
-This emulator is capable of running most Game Boy games to some fidelity and 
-implements all official instructions and memory banks.
-
-## Samples
-
 ![An sample menu](https://raw.githubusercontent.com/ToddBodnar/rustboy/master/screenshots/samples/gary_name.bmp)
 ![An animation of chatting in pokemon](https://raw.githubusercontent.com/ToddBodnar/rustboy/master/screenshots/samples/gary_talk.gif)
 ![A Tetris screenshot](https://raw.githubusercontent.com/ToddBodnar/rustboy/master/screenshots/samples/tetris.bmp)
 ![Passing cpu_instrs test](https://raw.githubusercontent.com/ToddBodnar/rustboy/master/screenshots/samples/cpu_pass.bmp)
 
+This emulator is capable of running most Game Boy games to some fidelity and 
+implements all official instructions and memory banks.
+
 ## Building
 
-Run `cleanAndMake.sh`. You will need a recent version of Rust and CMake 
-installed.
+Run `cleanAndMake.sh`. You will need a recent (as of July 2022) version of Rust 
+and CMake installed.
 
 ## Running
 
