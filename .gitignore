@@ -1,2 +1,7 @@
 /target
 **/*.rs.bk
+**/*.sav
+**/*.DS_Store
+integration.err
+integration.out
+screenshots/screenshot.bmp
