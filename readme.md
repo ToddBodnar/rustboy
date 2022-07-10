@@ -5,10 +5,10 @@ implements all official instructions and memory banks.
 
 ## Samples
 
-![An sample menu](https://raw.githubusercontent.com/ToddBodnar/rustboy/master/screenshots/sample/gary_name.bmp)
-![An animation of chatting in pokemon](https://raw.githubusercontent.com/ToddBodnar/rustboy/master/screenshots/sample/gary_talk.gif)
-![A Tetris screenshot](https://raw.githubusercontent.com/ToddBodnar/rustboy/master/screenshots/sample/tetris.bmp)
-![Passing cpu_instrs test](https://raw.githubusercontent.com/ToddBodnar/rustboy/master/screenshots/sample/cpu_pass.bmp)
+![An sample menu](https://raw.githubusercontent.com/ToddBodnar/rustboy/master/screenshots/samples/gary_name.bmp)
+![An animation of chatting in pokemon](https://raw.githubusercontent.com/ToddBodnar/rustboy/master/screenshots/samples/gary_talk.gif)
+![A Tetris screenshot](https://raw.githubusercontent.com/ToddBodnar/rustboy/master/screenshots/samples/tetris.bmp)
+![Passing cpu_instrs test](https://raw.githubusercontent.com/ToddBodnar/rustboy/master/screenshots/samples/cpu_pass.bmp)
 
 ## Building
 
