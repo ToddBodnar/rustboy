@@ -2,13 +2,19 @@ use crate::engine::registers::Registers;
 use crate::engine::registers::RegisterNames;
 use crate::engine::engine::KeyNames;
 
+/// Common interface for various types of memory mapped RAM supported in different GB cards
 pub trait Memory {
+    
+    /// Set a specific memory mapped point 
     fn set(&mut self, loc: u16, val: u8);
 
+    /// Get a specific memory mapped point 
     fn get(&self, loc: u16) -> u8 ;
 
+    /// load a rom into memory
     fn load(&mut self, data: Vec<u8>);
 
+    /// handle saving for writable cards 
     fn save(&self) -> Vec<u8> ;
 
     fn setInterruptFlag(&mut self, flag: u8) {
